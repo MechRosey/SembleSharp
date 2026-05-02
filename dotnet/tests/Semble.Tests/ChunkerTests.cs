@@ -155,4 +155,86 @@ public class ChunkerTests : IDisposable
         var result = FileWalker.FilterExtensions(explicitSet, includeTextFiles: false);
         Assert.Equal(explicitSet, result);
     }
+
+    [Fact]
+    public void ChunkFile_Cpp_Produces_Sorted_Chunks()
+    {
+        var path = Path.Combine(_tmp, "sample.cpp");
+        File.WriteAllText(path,
+            "#include <iostream>\n" +
+            "\n" +
+            "int add(int a, int b) {\n" +
+            "    return a + b;\n" +
+            "}\n" +
+            "\n" +
+            "class Foo {\n" +
+            "public:\n" +
+            "    void bar() { std::cout << \"hi\"; }\n" +
+            "    int x = 0;\n" +
+            "};\n" +
+            "\n" +
+            "int main() { return add(1, 2); }\n");
+        var chunks = Chunker.ChunkFile(path);
+        Assert.NotEmpty(chunks);
+        var startLines = chunks.Select(c => c.StartLine).ToList();
+        Assert.Equal(startLines.OrderBy(x => x).ToList(), startLines);
+        Assert.All(chunks, c => Assert.Equal("cpp", c.Language));
+    }
+
+    [Fact]
+    public void TreeSitterChunker_Cpp_Splits_Large_Class_Across_Multiple_Chunks()
+    {
+        var members = string.Concat(Enumerable.Range(0, 5).Select(i =>
+            $"    void M{i}() {{ std::cout << \"member function {i} body padding\"; }}\n"));
+        var source = $"class Big {{\npublic:\n{members}}};\n";
+
+        var chunks = TreeSitterChunker.TryChunk(
+            source, "Big.cpp", "cpp",
+            TreeSitterGrammars.Cpp,
+            TreeSitterGrammars.CppSplittableKinds,
+            chunkSize: 80);
+        Assert.NotNull(chunks);
+        Assert.True(chunks!.Count >= 2,
+            $"expected splitting across at least 2 chunks; got {chunks.Count}");
+        var startLines = chunks.Select(c => c.StartLine).ToList();
+        Assert.Equal(startLines.OrderBy(x => x).ToList(), startLines);
+    }
+
+    [Fact]
+    public void TreeSitterChunker_Cpp_Top_Level_Functions_Become_Separate_Chunks_Below_Budget()
+    {
+        var source =
+            "int add(int a, int b) { return a + b; }\n" +
+            "int sub(int a, int b) { return a - b; }\n";
+        var chunks = TreeSitterChunker.TryChunk(
+            source, "ops.cpp", "cpp",
+            TreeSitterGrammars.Cpp,
+            TreeSitterGrammars.CppSplittableKinds,
+            chunkSize: 50);
+        Assert.NotNull(chunks);
+        Assert.Equal(2, chunks!.Count);
+        Assert.Contains("add", chunks[0].Content, StringComparison.Ordinal);
+        Assert.Contains("sub", chunks[1].Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TreeSitterChunker_Cpp_Returns_Null_For_Source_With_No_Splittables()
+    {
+        Assert.Null(TreeSitterChunker.TryChunk(
+            "// just a comment\n   \n",
+            "empty.cpp", "cpp",
+            TreeSitterGrammars.Cpp,
+            TreeSitterGrammars.CppSplittableKinds));
+    }
+
+    [Fact]
+    public void ChunkSource_Cpp_Routes_Through_TreeSitter_And_Records_Language()
+    {
+        var chunks = Chunker.ChunkSource(
+            "int add(int a, int b) { return a + b; }\n",
+            "add.cpp", "cpp");
+        Assert.Single(chunks);
+        Assert.StartsWith("int add", chunks[0].Content);
+        Assert.Equal("cpp", chunks[0].Language);
+    }
 }

@@ -37,17 +37,24 @@ public static class Chunker
             return new List<Chunk>();
 
         // Language-specific code-aware chunkers; each returns null on no usable
-        // result, in which case we fall back to line-based chunking. Other
-        // languages (and the tree-sitter integration for them) are pending.
-        if (language == "csharp")
-        {
-            var chunks = RoslynChunker.TryChunkCSharp(source, filePath, language);
-            if (chunks is { Count: > 0 })
-                return chunks;
-        }
+        // result, in which case we fall back to line-based chunking.
+        var aware = TryCodeAwareChunk(source, filePath, language);
+        if (aware is { Count: > 0 })
+            return aware;
 
         return ChunkLines(source, filePath, language);
     }
+
+    private static List<Chunk>? TryCodeAwareChunk(string source, string filePath, string? language) =>
+        language switch
+        {
+            "csharp" => RoslynChunker.TryChunkCSharp(source, filePath, language),
+            "cpp" => TreeSitterChunker.TryChunk(
+                source, filePath, language,
+                TreeSitterGrammars.Cpp,
+                TreeSitterGrammars.CppSplittableKinds),
+            _ => null,
+        };
 
     /// <summary>Split <paramref name="source"/> by line count with overlap.</summary>
     public static List<Chunk> ChunkLines(
