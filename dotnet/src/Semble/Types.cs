@@ -57,9 +57,10 @@ public sealed record Chunk(
 }
 
 /// <summary>
-/// A single search result with score and source retriever.
+/// A single search result with score and source retriever. Score is double-precision
+/// to match Python's float64 — matters for hybrid/RRF arithmetic.
 /// </summary>
-public sealed record SearchResult(Chunk Chunk, float Score, SearchMode Source);
+public sealed record SearchResult(Chunk Chunk, double Score, SearchMode Source);
 
 /// <summary>
 /// Statistics about the current index state.
