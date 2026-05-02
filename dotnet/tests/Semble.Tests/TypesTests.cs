@@ -48,6 +48,36 @@ public class SearchModeTests
     }
 }
 
+public class FormattingTests
+{
+    [Theory]
+    [InlineData("https://github.com/x/y", true)]
+    [InlineData("git@github.com:x/y", true)]
+    [InlineData("/local/path", false)]
+    [InlineData("./rel", false)]
+    [InlineData("file:///foo", true)]
+    public void IsGitUrl_Matches_Python(string path, bool expected)
+    {
+        Assert.Equal(expected, Formatting.IsGitUrl(path));
+    }
+
+    [Fact]
+    public void FormatResults_Matches_Python_Output()
+    {
+        var chunk = new Chunk(
+            Content: "def foo():\n    pass",
+            FilePath: "src/foo.py",
+            StartLine: 1,
+            EndLine: 2,
+            Language: "python");
+        var res = new SearchResult(chunk, 0.9, SearchMode.Hybrid);
+        var actual = Formatting.FormatResults("Header", new[] { res });
+        const string expected =
+            "Header\n\n## 1. src/foo.py:1-2  [score=0.900]\n```\ndef foo():\n    pass\n```\n";
+        Assert.Equal(expected, actual);
+    }
+}
+
 public class IndexStatsTests
 {
     [Fact]
