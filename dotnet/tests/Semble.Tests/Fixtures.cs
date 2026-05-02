@@ -36,17 +36,17 @@ internal static class Fixtures
 
         public float[,] Encode(IReadOnlyList<string> texts)
         {
-            // Deterministic across calls: re-seed each invocation. xUnit may
-            // share an instance across tests, but the same input always yields
-            // the same output.
-            var rng = new Random(_seed);
+            // Deterministic per text: we seed the per-row RNG with a stable
+            // hash of (encoder_seed, text) so identical content always maps to
+            // the same embedding regardless of call order, and distinct content
+            // maps to distinct embeddings.
             var m = new float[texts.Count, _dim];
             for (int i = 0; i < texts.Count; i++)
             {
+                var rng = new Random(SeedFor(texts[i]));
                 double sumSq = 0.0;
                 for (int d = 0; d < _dim; d++)
                 {
-                    // Box-Muller for a standard-normal sample.
                     double u1 = 1.0 - rng.NextDouble();
                     double u2 = 1.0 - rng.NextDouble();
                     double z = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
@@ -58,6 +58,21 @@ internal static class Fixtures
                     m[i, d] = (float)(m[i, d] / norm);
             }
             return m;
+        }
+
+        private int SeedFor(string text)
+        {
+            // FNV-1a 32-bit, mixed with the encoder seed. Stable across runs.
+            unchecked
+            {
+                uint hash = 2166136261u;
+                foreach (var ch in text)
+                {
+                    hash ^= ch;
+                    hash *= 16777619u;
+                }
+                return (int)(hash ^ (uint)_seed);
+            }
         }
     }
 }
