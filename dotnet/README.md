@@ -40,7 +40,7 @@ the migration branch, on Ubuntu / macOS / Windows.
 | 2  | Tokenisation (`tokens.py`)                          | done — byte-for-byte parity vs Python |
 | 3  | Ranking (`weighting`, `boosting`, `penalties`)      | done — exact-value parity (2.75 / 1.625 / 2.75) |
 | 4  | File walker + `.gitignore`                          | done — minimal pathspec subset, validated against pathspec |
-| 5  | Line-based chunker                                  | done — tree-sitter integration deferred |
+| 5  | Line-based chunker                                  | done — line-based default + Roslyn for C# + tree-sitter for C++; other languages still fall back to line-based |
 | 6  | BM25 + path enrichment                              | done — bit-for-bit parity with `bm25s.BM25(method='lucene')` |
 | 7  | Dense backend                                       | done — brute-force cosine + stable top-k |
 | 8  | Index orchestration (`FromPath` / `FromGit`)        | done |
@@ -53,9 +53,11 @@ the migration branch, on Ubuntu / macOS / Windows.
 ## What's not ported
 
 - **`benchmarks/`** — explicitly out of scope for the .NET port. Stays Python.
-- **Tree-sitter chunking** (`chonkie[code]`) — `Chunker.ChunkSource` always falls
-  back to the line-based path; this is the same fallback the upstream code uses
-  when Chonkie fails. One test is `[Fact(Skip = "tree-sitter integration deferred")]`.
+- **Code-aware chunking for languages other than C# and C++** — `Chunker.ChunkSource`
+  uses Roslyn for `.cs`, tree-sitter for `.cpp`, and falls back to the line-based
+  chunker for everything else. Adding more grammars is a per-language follow-up
+  (just add the `tree-sitter-<lang>` NuGet, a `tree_sitter_<lang>()` DllImport,
+  and a splittable-kinds whitelist).
 - **Default ONNX encoder for `potion-code-16M`** — `Dense.LoadModel()` throws
   `NotImplementedException`. The library and tests are fully exercised through a
   deterministic `MockEncoder` that mirrors the Python `mock_model` fixture.
