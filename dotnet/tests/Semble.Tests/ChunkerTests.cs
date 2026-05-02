@@ -64,12 +64,68 @@ public class ChunkerTests : IDisposable
         Assert.All(chunks, c => Assert.Null(c.Language));
     }
 
-    [Fact(Skip = "tree-sitter chunker integration deferred to a follow-up chunk")]
-    public void ChunkFile_Py_Produces_Sorted_Chunks()
+    // C# equivalent of the upstream tree-sitter / py-tree-sitter test
+    // (test_chunk_file_py_produces_sorted_chunks). The .NET port uses Roslyn for
+    // C# specifically and tree-sitter for the rest (tree-sitter integration is
+    // wired up in a follow-up commit).
+    [Fact]
+    public void ChunkFile_Cs_Produces_Sorted_Chunks()
     {
-        // Mirrors test_chunk_file_py_produces_sorted_chunks. The .NET port currently
-        // always uses the line-based fallback; this assertion will be re-enabled once
-        // tree-sitter / Chonkie equivalent is wired up.
+        var path = Path.Combine(_tmp, "Sample.cs");
+        File.WriteAllText(path,
+            "namespace Sample\n" +
+            "{\n" +
+            "    public class A\n" +
+            "    {\n" +
+            "        public int Add(int a, int b) => a + b;\n" +
+            "        public int Subtract(int a, int b) => a - b;\n" +
+            "    }\n" +
+            "}\n");
+        var chunks = Chunker.ChunkFile(path);
+        Assert.NotEmpty(chunks);
+        var startLines = chunks.Select(c => c.StartLine).ToList();
+        Assert.Equal(startLines.OrderBy(x => x).ToList(), startLines);
+        Assert.All(chunks, c => Assert.Equal("csharp", c.Language));
+    }
+
+    [Fact]
+    public void RoslynChunker_Splits_Large_Class_Across_Multiple_Chunks()
+    {
+        // Build a class with a few methods large enough to exceed a tight chunk size.
+        var methods = string.Concat(Enumerable.Range(0, 5).Select(i =>
+            $"    public void M{i}() {{ var s = \"method {i} body padding to push us over the budget\"; }}\n"));
+        var source = $"namespace Big {{\n  public class C {{\n{methods}  }}\n}}\n";
+
+        var chunks = RoslynChunker.TryChunkCSharp(source, "Big.cs", "csharp", chunkSize: 80);
+        Assert.NotNull(chunks);
+        Assert.True(chunks!.Count >= 2,
+            $"expected splitting across at least 2 chunks; got {chunks.Count}");
+        var startLines = chunks.Select(c => c.StartLine).ToList();
+        Assert.Equal(startLines.OrderBy(x => x).ToList(), startLines);
+    }
+
+    [Fact]
+    public void RoslynChunker_Returns_Null_For_Source_With_No_Members()
+    {
+        // Just usings, no namespaces / types / top-level statements that would
+        // surface as splittable members.
+        Assert.Null(RoslynChunker.TryChunkCSharp("using System;\nusing System.IO;\n", "U.cs", "csharp"));
+    }
+
+    [Fact]
+    public void ChunkSource_Csharp_Routes_Through_Roslyn_When_Possible_And_Falls_Back_Otherwise()
+    {
+        // Real class → Roslyn chunker produces a chunk whose content starts at the class.
+        var roslynChunks = Chunker.ChunkSource(
+            "public class Foo { public int X => 1; }\n", "Foo.cs", "csharp");
+        Assert.Single(roslynChunks);
+        Assert.StartsWith("public class Foo", roslynChunks[0].Content);
+
+        // Just usings → no Roslyn-splittable members → falls back to line chunker.
+        var fallback = Chunker.ChunkSource(
+            "using System;\nusing System.IO;\n", "U.cs", "csharp");
+        Assert.NotEmpty(fallback);
+        Assert.Equal(1, fallback[0].StartLine);
     }
 
     // The Python suite has three "Chonkie-fallback" parametrise cases (raises,

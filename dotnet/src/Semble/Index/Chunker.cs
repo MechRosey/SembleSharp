@@ -35,7 +35,17 @@ public static class Chunker
     {
         if (source.AsSpan().Trim().Length == 0)
             return new List<Chunk>();
-        // Tree-sitter chunking is deferred — we always fall back to line-based.
+
+        // Language-specific code-aware chunkers; each returns null on no usable
+        // result, in which case we fall back to line-based chunking. Other
+        // languages (and the tree-sitter integration for them) are pending.
+        if (language == "csharp")
+        {
+            var chunks = RoslynChunker.TryChunkCSharp(source, filePath, language);
+            if (chunks is { Count: > 0 })
+                return chunks;
+        }
+
         return ChunkLines(source, filePath, language);
     }
 
