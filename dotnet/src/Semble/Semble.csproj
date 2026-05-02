@@ -1,16 +1,19 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
-    <PackageReference Include="tree-sitter" Version="0.4.19" />
-    <PackageReference Include="tree-sitter-cpp" Version="0.4.19" />
-    <PackageReference Include="TreeSitter" Version="1.0.0" />
   </ItemGroup>
+
+  <!--
+    Vendored tree-sitter natives live under ../../native/. The build target
+    compiles them from source for the host RID and stages them into
+    bin/<config>/<tfm>/runtimes/<rid>/native/ so the .NET asset graph picks
+    them up automatically (and propagates them into dependent projects' bin).
+  -->
+  <Import Project="..\..\native\BuildNatives.targets" />
 
 </Project>

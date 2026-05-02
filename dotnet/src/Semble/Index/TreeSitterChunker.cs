@@ -1,5 +1,5 @@
-using System.Runtime.InteropServices;
-using TreeSitter;
+using System.Text;
+using static Semble.Index.TreeSitterInterop;
 
 namespace Semble.Index;
 
@@ -8,7 +8,7 @@ namespace Semble.Index;
 /// returned by the corresponding `tree_sitter_<lang>()` C entry point. Walks the
 /// parse tree, collects splittable nodes (per-language whitelist), and
 /// greedy-merges consecutive nodes up to <see cref="DefaultChunkSize"/>
-/// characters per chunk — the same shape as <see cref="RoslynChunker"/>.
+/// characters per chunk — same shape as <see cref="RoslynChunker"/>.
 /// </summary>
 public static class TreeSitterChunker
 {
@@ -31,60 +31,104 @@ public static class TreeSitterChunker
         if (grammar == IntPtr.Zero)
             return null;
 
-        using var parser = new Parser { Language = new Language(grammar) };
-        using var tree = parser.Parse(source);
-        var root = tree.Root;
-
-        var splittable = new List<Node>();
-        Collect(root, splittable, splittableKinds, chunkSize);
-        if (splittable.Count == 0)
+        // Encode source to UTF-8 once. tree-sitter operates on UTF-8 bytes;
+        // .NET strings are UTF-16, so the byte offsets returned by tree-sitter
+        // must be mapped back to .NET string indices via the byte→char map
+        // computed below.
+        var utf8 = Encoding.UTF8.GetBytes(source);
+        if (utf8.Length == 0)
             return null;
 
-        var chunks = new List<Chunk>();
-        int chunkStart = -1;
-        int chunkEnd = -1;
-        foreach (var node in splittable)
+        var parser = ts_parser_new();
+        if (parser == IntPtr.Zero)
+            return null;
+        try
         {
-            int s = (int)node.StartByte;
-            int e = (int)node.EndByte;
-            if (e <= s)
-                continue;
+            if (!ts_parser_set_language(parser, grammar))
+                return null;
 
-            if (chunkStart < 0)
+            var tree = ts_parser_parse_string_encoding(
+                parser, IntPtr.Zero, utf8, (uint)utf8.Length, TSInputEncodingUTF8);
+            if (tree == IntPtr.Zero)
+                return null;
+
+            try
             {
-                chunkStart = s;
-                chunkEnd = e;
+                var root = ts_tree_root_node(tree);
+
+                var splittable = new List<TSNode>();
+                Collect(root, splittable, splittableKinds, chunkSize);
+                if (splittable.Count == 0)
+                    return null;
+
+                // Build a lookup from UTF-8 byte index to .NET char index. Most
+                // source files are ASCII so this table is mostly identity, but
+                // it correctly handles multi-byte characters (e.g. UTF-8 BOMs,
+                // unicode identifiers, comments in non-ASCII).
+                int[] byteToChar = BuildByteToCharMap(source, utf8.Length);
+
+                var chunks = new List<Chunk>();
+                int chunkStartByte = -1;
+                int chunkEndByte = -1;
+                foreach (var node in splittable)
+                {
+                    int s = (int)ts_node_start_byte(node);
+                    int e = (int)ts_node_end_byte(node);
+                    if (e <= s)
+                        continue;
+
+                    if (chunkStartByte < 0)
+                    {
+                        chunkStartByte = s;
+                        chunkEndByte = e;
+                    }
+                    else if (e - chunkStartByte <= chunkSize)
+                    {
+                        chunkEndByte = e;
+                    }
+                    else
+                    {
+                        chunks.Add(MakeChunk(source, filePath, language,
+                            chunkStartByte, chunkEndByte, byteToChar));
+                        chunkStartByte = s;
+                        chunkEndByte = e;
+                    }
+                }
+                if (chunkStartByte >= 0)
+                {
+                    chunks.Add(MakeChunk(source, filePath, language,
+                        chunkStartByte, chunkEndByte, byteToChar));
+                }
+
+                return chunks.Count == 0 ? null : chunks;
             }
-            else if (e - chunkStart <= chunkSize)
+            finally
             {
-                chunkEnd = e;
-            }
-            else
-            {
-                chunks.Add(MakeChunk(source, filePath, language, chunkStart, chunkEnd));
-                chunkStart = s;
-                chunkEnd = e;
+                ts_tree_delete(tree);
             }
         }
-        if (chunkStart >= 0)
-            chunks.Add(MakeChunk(source, filePath, language, chunkStart, chunkEnd));
-
-        return chunks.Count == 0 ? null : chunks;
+        finally
+        {
+            ts_parser_delete(parser);
+        }
     }
 
     private static void Collect(
-        Node node,
-        List<Node> result,
+        TSNode node,
+        List<TSNode> result,
         IReadOnlySet<string> splittableKinds,
         int chunkSize)
     {
-        foreach (var child in node.Children)
+        uint count = ts_node_child_count(node);
+        for (uint i = 0; i < count; i++)
         {
-            if (!child.IsNamed)
+            var child = ts_node_child(node, i);
+            if (!ts_node_is_named(child))
                 continue;
-            if (splittableKinds.Contains(child.Kind))
+            var kind = NodeKind(child);
+            if (splittableKinds.Contains(kind))
             {
-                int size = (int)(child.EndByte - child.StartByte);
+                int size = (int)(ts_node_end_byte(child) - ts_node_start_byte(child));
                 if (size <= chunkSize)
                 {
                     result.Add(child);
@@ -106,8 +150,16 @@ public static class TreeSitterChunker
         }
     }
 
-    private static Chunk MakeChunk(string source, string filePath, string? language, int startCh, int endCh)
+    private static Chunk MakeChunk(
+        string source,
+        string filePath,
+        string? language,
+        int startByte,
+        int endByte,
+        int[] byteToChar)
     {
+        int startCh = byteToChar[startByte];
+        int endCh = byteToChar[endByte];
         var content = source.Substring(startCh, endCh - startCh);
         // 1-indexed line numbers, matching src/semble/index/chunker.py:_chunk_with_chonkie:
         //   start_line = source[:start_index].count("\n") + 1
@@ -125,21 +177,63 @@ public static class TreeSitterChunker
             if (source[i] == '\n') n++;
         return n;
     }
+
+    /// <summary>
+    /// For each UTF-8 byte index 0..byteCount, return the corresponding .NET
+    /// (UTF-16 char) index. The returned array has length byteCount + 1 so
+    /// end-exclusive byte offsets can also be looked up.
+    /// </summary>
+    private static int[] BuildByteToCharMap(string source, int byteCount)
+    {
+        var map = new int[byteCount + 1];
+        var utf8 = Encoding.UTF8;
+        int charIndex = 0;
+        int byteIndex = 0;
+        // Walk character by character, advancing byteIndex by the UTF-8 length
+        // of each .NET char (or surrogate pair). Fast path: bulk-scan ASCII.
+        var span = source.AsSpan();
+        var buf = new byte[4];
+        while (charIndex < span.Length)
+        {
+            char c = span[charIndex];
+            if (c < 0x80)
+            {
+                map[byteIndex] = charIndex;
+                byteIndex++;
+                charIndex++;
+            }
+            else
+            {
+                int charsConsumed = char.IsHighSurrogate(c) && charIndex + 1 < span.Length
+                    && char.IsLowSurrogate(span[charIndex + 1]) ? 2 : 1;
+                int bytesWritten = utf8.GetBytes(
+                    span.Slice(charIndex, charsConsumed), buf);
+                for (int b = 0; b < bytesWritten; b++)
+                    map[byteIndex + b] = charIndex;
+                byteIndex += bytesWritten;
+                charIndex += charsConsumed;
+            }
+        }
+        // Sentinel: byteCount maps to source.Length so end-exclusive lookups
+        // round to the end of the .NET string.
+        map[byteCount] = source.Length;
+        return map;
+    }
 }
 
 /// <summary>
 /// Per-language tree-sitter grammar bindings. Each grammar lives in its own
-/// `libtree-sitter-<lang>` native library shipped by the corresponding NuGet,
-/// resolved at runtime via P/Invoke.
+/// `libtree-sitter-<lang>` native library built from vendored source under
+/// `dotnet/native/<grammar>` and resolved at runtime via P/Invoke.
 /// </summary>
 public static class TreeSitterGrammars
 {
-    public static IntPtr Cpp => CppNative.tree_sitter_cpp();
+    public static IntPtr Cpp => TreeSitterCppNative.tree_sitter_cpp();
 
     /// <summary>
-    /// Whitelist of node kinds that the cpp chunker treats as splittable units.
+    /// Whitelist of node kinds the cpp chunker treats as splittable units.
     /// Tree-sitter-cpp emits these names; non-named anonymous nodes (`;`, `{`)
-    /// are filtered out by <see cref="Node.IsNamed"/>.
+    /// are filtered out via <see cref="TreeSitterInterop.ts_node_is_named"/>.
     /// </summary>
     public static readonly IReadOnlySet<string> CppSplittableKinds = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -160,10 +254,4 @@ public static class TreeSitterGrammars
         "preproc_function_def",
         "preproc_call",
     };
-
-    private static class CppNative
-    {
-        [DllImport("tree-sitter-cpp")]
-        internal static extern IntPtr tree_sitter_cpp();
-    }
 }

@@ -28,6 +28,17 @@ dotnet build dotnet/Semble.sln
 dotnet test dotnet/Semble.sln
 ```
 
+A C compiler is required to build the vendored tree-sitter natives:
+
+| Platform | Compiler | Notes |
+|---|---|---|
+| Linux   | `cc` / `gcc` / `clang` | preinstalled on most distros and on `ubuntu-latest` runners |
+| macOS   | `clang`                 | ships with Xcode Command Line Tools |
+| Windows | `cl.exe`                | run from a Visual Studio Developer Command Prompt; CI uses `ilammy/msvc-dev-cmd@v1` |
+
+The build script picks `cc` if present, otherwise falls back to `clang` then
+`gcc`. Override with `CC=...`.
+
 CI (`.github/workflows/dotnet.yaml`) runs the same on every push to `main` and
 the migration branch, on Ubuntu / macOS / Windows.
 
@@ -40,7 +51,7 @@ the migration branch, on Ubuntu / macOS / Windows.
 | 2  | Tokenisation (`tokens.py`)                          | done — byte-for-byte parity vs Python |
 | 3  | Ranking (`weighting`, `boosting`, `penalties`)      | done — exact-value parity (2.75 / 1.625 / 2.75) |
 | 4  | File walker + `.gitignore`                          | done — minimal pathspec subset, validated against pathspec |
-| 5  | Line-based chunker                                  | done — line-based default + Roslyn for C# + tree-sitter for C++; other languages still fall back to line-based |
+| 5  | Code-aware chunker                                  | done — line-based default + Roslyn for C# + tree-sitter for C++. tree-sitter source is **vendored** under `dotnet/native/` and built from source by `build-natives.{sh,cmd}`; no third-party tree-sitter NuGets are referenced. Other languages still fall back to line-based |
 | 6  | BM25 + path enrichment                              | done — bit-for-bit parity with `bm25s.BM25(method='lucene')` |
 | 7  | Dense backend                                       | done — brute-force cosine + stable top-k |
 | 8  | Index orchestration (`FromPath` / `FromGit`)        | done |

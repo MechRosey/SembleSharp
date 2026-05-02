@@ -27,6 +27,13 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      # Make `cl.exe` available on Windows so dotnet/native/build-natives.cmd
+      # can compile the vendored tree-sitter sources. ubuntu-latest and
+      # macos-latest already have cc/clang on PATH.
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Restore
         run: dotnet restore dotnet/Semble.sln
 
