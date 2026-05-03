@@ -7,7 +7,19 @@ namespace Semble.Index;
 /// heading-aware chunker, while a plain-text extractor (e.g. <c>pdftotext</c>)
 /// falls through to the line-based chunker.
 /// </summary>
-public sealed record ExtractedText(string Text, string Language);
+/// <param name="Text">The raw extracted text.</param>
+/// <param name="Language">Language hint for the extracted text — drives
+/// post-extract chunker dispatch (e.g. "text", "markdown").</param>
+/// <param name="PageBreaks">
+/// Optional 0-indexed character offsets where each page begins, when the
+/// source format has a page concept (PDF). Always starts with 0 if non-null.
+/// Drives the page-aware <see cref="PdfChunker"/> path so chunks carry
+/// <see cref="Locator.Pages"/>; null for formats with no page model.
+/// </param>
+public sealed record ExtractedText(
+    string Text,
+    string Language,
+    IReadOnlyList<int>? PageBreaks = null);
 
 /// <summary>
 /// Pluggable text-extraction backend for binary document formats (PDF,

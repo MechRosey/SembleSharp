@@ -34,6 +34,14 @@ public static class Chunker
             if (extractor is not null)
             {
                 var extracted = extractor.ExtractText(filePath);
+                // PDF-style extractors surface page breaks; route through the
+                // page-aware chunker so each chunk gets a Locator.Pages.
+                if (extracted.PageBreaks is { Count: > 0 })
+                {
+                    var pdfChunks = PdfChunker.TryChunk(extracted.Text, extracted.PageBreaks, filePath);
+                    if (pdfChunks is { Count: > 0 })
+                        return pdfChunks;
+                }
                 return ChunkSource(extracted.Text, filePath, extracted.Language);
             }
             var source = File.ReadAllText(filePath, LenientUtf8);

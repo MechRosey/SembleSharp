@@ -70,6 +70,14 @@ internal abstract class SubprocessExtractor : ITextExtractor
         }
     }
 
+    /// <summary>
+    /// Hook for concrete extractors to attach metadata (e.g. page breaks) to
+    /// the captured stdout. The default implementation just wraps the text
+    /// with the declared <see cref="OutputLanguage"/>.
+    /// </summary>
+    protected virtual ExtractedText PostProcess(string stdout) =>
+        new ExtractedText(stdout, OutputLanguage);
+
     public ExtractedText ExtractText(string filePath)
     {
         var psi = new ProcessStartInfo
@@ -109,6 +117,6 @@ internal abstract class SubprocessExtractor : ITextExtractor
                 $"{Name}: exit code {p.ExitCode} on '{filePath}': {stderr.Trim()}");
         }
 
-        return new ExtractedText(stdout, OutputLanguage);
+        return PostProcess(stdout);
     }
 }
