@@ -15,19 +15,39 @@ public static class Chunker
     private static readonly Encoding LenientUtf8 =
         new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false);
 
-    /// <summary>Chunk a single file from disk. Returns [] on any read error.</summary>
+    /// <summary>
+    /// Chunk a single file from disk. Returns [] on any read error.
+    /// </summary>
+    /// <remarks>
+    /// For binary document formats (PDF, .docx, .xlsx, .pptx) the registered
+    /// <see cref="ITextExtractor"/> in <see cref="TextExtractors.Current"/>
+    /// is invoked to produce text plus a language hint; the returned text
+    /// then flows through <see cref="ChunkSource"/> like any other file.
+    /// When no extractor is registered or available for the extension we
+    /// fall back to <see cref="File.ReadAllText(string)"/>.
+    /// </remarks>
     public static List<Chunk> ChunkFile(string filePath)
     {
-        string source;
+        var extractor = TextExtractors.Current.For(filePath);
         try
         {
-            source = File.ReadAllText(filePath, LenientUtf8);
+            if (extractor is not null)
+            {
+                var extracted = extractor.ExtractText(filePath);
+                return ChunkSource(extracted.Text, filePath, extracted.Language);
+            }
+            var source = File.ReadAllText(filePath, LenientUtf8);
+            return ChunkSource(source, filePath, FileWalker.LanguageForPath(filePath));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException
+                                   or UnauthorizedAccessException
+                                   or InvalidOperationException
+                                   or TimeoutException)
         {
+            // Treat extractor failures the same as a plain-read error: skip
+            // the file rather than aborting the whole walk.
             return new List<Chunk>();
         }
-        return ChunkSource(source, filePath, FileWalker.LanguageForPath(filePath));
     }
 
     /// <summary>Chunk pre-read source text. Whitespace-only input returns [].</summary>

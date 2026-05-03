@@ -8,6 +8,10 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Semble.Tests" />
+  </ItemGroup>
+
   <!--
     Vendored tree-sitter natives live under ../../native/. The build target
     compiles them from source for the host RID and stages them into

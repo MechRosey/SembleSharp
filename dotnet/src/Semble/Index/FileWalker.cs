@@ -48,6 +48,13 @@ public static class FileWalker
         [".yml"] = new("yaml", FileCategory.Document),
         [".toml"] = new("toml", FileCategory.Document),
         [".json"] = new("json", FileCategory.Document),
+        // Binary document formats — text content is fetched via an
+        // ITextExtractor (markitdown / pdftotext); chunking dispatches on
+        // the extractor's output language, not on the entries here.
+        [".pdf"] = new("pdf", FileCategory.Document),
+        [".docx"] = new("docx", FileCategory.Document),
+        [".xlsx"] = new("xlsx", FileCategory.Document),
+        [".pptx"] = new("pptx", FileCategory.Document),
     };
 
     public static readonly IReadOnlySet<string> DefaultIgnoredDirs = new HashSet<string>(StringComparer.Ordinal)

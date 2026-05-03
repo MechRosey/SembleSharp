@@ -34,6 +34,13 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      # Install pdftotext (Poppler) on Linux for the real-binary extractor
+      # test. The test is gated with [SkippableFact]; on macOS/Windows it
+      # skips at runtime so we don't add a build dep there.
+      - name: Install pdftotext (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
       - name: Restore
         run: dotnet restore dotnet/Semble.sln
 
