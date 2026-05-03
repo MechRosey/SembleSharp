@@ -5,10 +5,11 @@ namespace Semble.Tests;
 public class ChunkTests
 {
     [Fact]
-    public void Location_Formats_As_FilePath_StartLine_EndLine()
+    public void Location_Formats_As_FilePath_StartLine_EndLine_When_Locator_Is_Null()
     {
         var chunk = new Chunk("def foo(): ...", "src/module.py", 12, 18, "python");
         Assert.Equal("src/module.py:12-18", chunk.Location);
+        Assert.Null(chunk.Locator);
     }
 
     [Fact]
@@ -26,6 +27,56 @@ public class ChunkTests
     {
         var chunk = new Chunk("x", "a.py", 1, 1);
         Assert.Null(chunk.Language);
+    }
+
+    [Fact]
+    public void Pages_Locator_Renders_As_Single_Page_Or_Range()
+    {
+        var single = new Chunk("text", "paper.pdf", 1, 42, Locator: new Locator.Pages(3, 3));
+        Assert.Equal("paper.pdf:p3", single.Location);
+
+        var range = new Chunk("text", "paper.pdf", 1, 80, Locator: new Locator.Pages(3, 5));
+        Assert.Equal("paper.pdf:p3-5", range.Location);
+    }
+
+    [Fact]
+    public void Slide_Locator_Renders_With_Slide_Prefix()
+    {
+        var c = new Chunk("text", "deck.pptx", 1, 5, Locator: new Locator.Slide(12));
+        Assert.Equal("deck.pptx:slide12", c.Location);
+    }
+
+    [Fact]
+    public void Sheet_Locator_Renders_With_Sheet_Bang_Range()
+    {
+        var c = new Chunk("text", "book.xlsx", 1, 10, Locator: new Locator.Sheet("Sheet1", "A1:C10"));
+        Assert.Equal("book.xlsx:Sheet1!A1:C10", c.Location);
+    }
+
+    [Fact]
+    public void Heading_Locator_Renders_Path_Slash_Lines()
+    {
+        var c = new Chunk("text", "notes.md", 42, 58,
+            Locator: new Locator.Heading(new[] { "Architecture", "Storage" }));
+        Assert.Equal("notes.md:Architecture/Storage:42-58", c.Location);
+    }
+
+    [Fact]
+    public void Heading_Locator_With_Empty_Path_Renders_Just_Line_Range()
+    {
+        var c = new Chunk("text", "notes.md", 1, 5, Locator: new Locator.Heading(Array.Empty<string>()));
+        Assert.Equal("notes.md:1-5", c.Location);
+    }
+
+    [Fact]
+    public void Heading_Locator_Equals_Compares_Path_By_Sequence()
+    {
+        var a = new Locator.Heading(new[] { "A", "B" });
+        var b = new Locator.Heading(new List<string> { "A", "B" });
+        var c = new Locator.Heading(new[] { "A", "B", "C" });
+        Assert.Equal(a, b);
+        Assert.NotEqual(a, c);
+        Assert.Equal(a.GetHashCode(), b.GetHashCode());
     }
 }
 
