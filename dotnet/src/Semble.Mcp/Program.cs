@@ -28,18 +28,16 @@ internal static class Program
             }
         }
 
-        // Loading the default ONNX-backed encoder is a deferred Chunk 10 task;
-        // require the caller to bring their own encoder until then.
+        // Resolution order: --model-path arg, SEMBLE_MODEL_PATH env var,
+        // ~/.cache/semble/<DefaultModelName>/. If none exists, fail fast with
+        // a message that tells the operator how to download the model.
         IEncoder model;
         try
         {
             model = Dense.LoadModel();
         }
-        catch (NotImplementedException ex)
+        catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException)
         {
-            await Console.Error.WriteLineAsync(
-                "Semble.Mcp requires a default IEncoder, which the .NET port has " +
-                "not yet wired up (Chunk 10 — ONNX-backed potion-code-16M loader).");
             await Console.Error.WriteLineAsync(ex.Message);
             return 1;
         }

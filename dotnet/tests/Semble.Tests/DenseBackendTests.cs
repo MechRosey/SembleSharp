@@ -145,8 +145,10 @@ public class DenseEmbedChunksTests
     }
 
     [Fact]
-    public void LoadModel_Throws_NotImplementedException_Until_Chunk_10()
+    public void LoadModel_With_Missing_Path_Throws_DirectoryNotFound_With_Helpful_Message()
     {
-        Assert.Throws<NotImplementedException>(() => Dense.LoadModel());
+        var bogus = Path.Combine(Path.GetTempPath(), "semble-no-such-model-" + Guid.NewGuid().ToString("N"));
+        var ex = Assert.Throws<DirectoryNotFoundException>(() => Dense.LoadModel(bogus));
+        Assert.Contains("not found", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

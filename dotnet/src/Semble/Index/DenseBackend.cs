@@ -105,15 +105,44 @@ public sealed class DenseBackend
 public static class Dense
 {
     public const string DefaultModelName = "minishlab/potion-code-16M";
+    private const string ModelPathEnvVar = "SEMBLE_MODEL_PATH";
 
     /// <summary>
-    /// Loading the default ONNX-backed encoder is implemented in a follow-up
-    /// chunk; until then, callers must supply their own <see cref="IEncoder"/>.
+    /// Load a model2vec / potion static-embedding model from disk and return
+    /// it as an <see cref="IEncoder"/>. Resolution order:
+    ///   1. Explicit <paramref name="modelPath"/> argument
+    ///   2. <c>SEMBLE_MODEL_PATH</c> environment variable
+    ///   3. <c>~/.cache/semble/&lt;DefaultModelName&gt;/</c>
     /// </summary>
-    public static IEncoder LoadModel(string? modelPath = null) =>
-        throw new NotImplementedException(
-            "Default ONNX-backed encoder isn't ported yet. Pass an explicit IEncoder " +
-            "implementation; see Chunk 10 in /root/.claude/plans for the plan.");
+    /// <exception cref="DirectoryNotFoundException">
+    /// If no path resolves to an existing directory. The message tells the user
+    /// how to download the model from HuggingFace.
+    /// </exception>
+    public static IEncoder LoadModel(string? modelPath = null)
+    {
+        var resolved = ResolveModelPath(modelPath);
+        return Encoders.PotionCodeEncoder.LoadFromDirectory(resolved);
+    }
+
+    private static string ResolveModelPath(string? explicitPath)
+    {
+        if (!string.IsNullOrEmpty(explicitPath))
+            return explicitPath;
+
+        var fromEnv = Environment.GetEnvironmentVariable(ModelPathEnvVar);
+        if (!string.IsNullOrEmpty(fromEnv))
+            return fromEnv;
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var defaultDir = System.IO.Path.Combine(home, ".cache", "semble", DefaultModelName);
+        if (Directory.Exists(defaultDir))
+            return defaultDir;
+
+        throw new DirectoryNotFoundException(
+            $"No Semble embedding model found. Pass --model-path, set {ModelPathEnvVar}, " +
+            $"or download the default model into '{defaultDir}', e.g.:\n" +
+            $"  huggingface-cli download {DefaultModelName} --local-dir '{defaultDir}'");
+    }
 
     /// <summary>Embed chunk content via the supplied encoder.</summary>
     public static float[,] EmbedChunks(IEncoder model, IReadOnlyList<Chunk> chunks)

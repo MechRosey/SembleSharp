@@ -58,7 +58,7 @@ the migration branch, on Ubuntu / macOS / Windows.
 | 9  | Search (`semantic` / `bm25` / `hybrid`)             | done — RRF k=60, full ranking pipeline |
 | 11 | CLI (`search`, `find-related`, `init`)              | done — embedded agent-search.md resource |
 | 12 | MCP server                                          | done — `ModelContextProtocol` SDK + stdio transport |
-| 10 | ONNX-backed default encoder                         | **deferred stretch** — library is fully usable via a caller-supplied `IEncoder` |
+| 10 | Default static-embedding encoder (`PotionCodeEncoder`) | done — pure-C# loader for model2vec / sentence-transformers folder layout (`tokenizer.json` + `model.safetensors` + `config.json`); WordPiece tokenizer hand-rolled; runtime download is the operator's responsibility (no auto-download yet) |
 | 13 | Remove Python sources, update root README           | gated on Chunk 10 + end-to-end parity check |
 
 ## What's not ported
@@ -69,20 +69,37 @@ the migration branch, on Ubuntu / macOS / Windows.
   chunker for everything else. Adding more grammars is a per-language follow-up
   (just add the `tree-sitter-<lang>` NuGet, a `tree_sitter_<lang>()` DllImport,
   and a splittable-kinds whitelist).
-- **Default ONNX encoder for `potion-code-16M`** — `Dense.LoadModel()` throws
-  `NotImplementedException`. The library and tests are fully exercised through a
-  deterministic `MockEncoder` that mirrors the Python `mock_model` fixture.
+- **Auto-download of the default model** — `Dense.LoadModel()` resolves a
+  model path in this order: explicit `modelPath` argument → `SEMBLE_MODEL_PATH`
+  environment variable → `~/.cache/semble/minishlab/potion-code-16M/`. If none
+  exist, it throws `DirectoryNotFoundException` with a message telling the
+  user to run e.g. `huggingface-cli download minishlab/potion-code-16M
+  --local-dir ~/.cache/semble/minishlab/potion-code-16M`. A built-in HTTPS
+  downloader with SHA256 verification is a follow-up.
 
 ## Running the binaries
 
-```bash
-# CLI (requires a caller-supplied IEncoder until Chunk 10 lands)
-dotnet run --project dotnet/src/Semble.Cli -- init
-dotnet run --project dotnet/src/Semble.Cli -- --help
+The default encoder is `minishlab/potion-code-16M`. Download it once from
+HuggingFace:
 
-# MCP server (will exit non-zero with a clear message until Chunk 10 lands)
-dotnet run --project dotnet/src/Semble.Mcp
+```bash
+pip install --user huggingface_hub
+huggingface-cli download minishlab/potion-code-16M \
+    --local-dir ~/.cache/semble/minishlab/potion-code-16M
 ```
+
+Then:
+
+```bash
+# CLI
+dotnet run --project dotnet/src/Semble.Cli -- init
+dotnet run --project dotnet/src/Semble.Cli -- search "auth flow" path/to/repo
+
+# MCP server (stdio)
+dotnet run --project dotnet/src/Semble.Mcp -- path/to/repo
+```
+
+To use a different on-disk model, set `SEMBLE_MODEL_PATH=/path/to/model-folder`.
 
 ## Reference parity
 
