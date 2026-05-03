@@ -53,6 +53,7 @@ public static class Chunker
                 source, filePath, language,
                 TreeSitterGrammars.Cpp,
                 TreeSitterGrammars.CppSplittableKinds),
+            "markdown" => MarkdownChunker.TryChunk(source, filePath, language),
             _ => null,
         };
 
