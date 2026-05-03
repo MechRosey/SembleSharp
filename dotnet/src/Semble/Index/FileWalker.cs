@@ -87,6 +87,14 @@ public static class FileWalker
     /// Yield files under <paramref name="root"/> matching <paramref name="extensions"/>,
     /// skipping default-ignored dirs, user-supplied ignored dir names, and root .gitignore.
     /// </summary>
+    /// <remarks>
+    /// Directory entries whose canonical (symlink-resolved) path falls outside
+    /// <paramref name="root"/> are not descended into. This prevents a malicious
+    /// repo containing a directory symlink (e.g. <c>notes -> /home/user/.config</c>)
+    /// from causing the walker to read files outside the supplied root.
+    /// File-level symlinks are still followed by <see cref="File.ReadAllText(string)"/>
+    /// at chunk-read time — same as the upstream Python implementation.
+    /// </remarks>
     public static IEnumerable<string> WalkFiles(
         string root,
         IReadOnlySet<string> extensions,
@@ -97,7 +105,8 @@ public static class FileWalker
             ignoreDirs.UnionWith(ignore);
 
         var gitignore = LoadRootGitignore(root);
-        return Walk(root, root, extensions, ignoreDirs, gitignore);
+        var canonicalRoot = Canonicalize(root);
+        return Walk(root, root, extensions, ignoreDirs, gitignore, canonicalRoot);
     }
 
     private static GitIgnoreMatcher? LoadRootGitignore(string root)
@@ -114,7 +123,8 @@ public static class FileWalker
         string current,
         IReadOnlySet<string> extensions,
         IReadOnlySet<string> ignoreDirs,
-        GitIgnoreMatcher? gitignore)
+        GitIgnoreMatcher? gitignore,
+        string canonicalRoot)
     {
         string[] dirs;
         string[] files;
@@ -141,6 +151,14 @@ public static class FileWalker
             var rel = (relDir.Length == 0 ? dirName : relDir + "/" + dirName) + "/";
             if (gitignore?.IsIgnored(rel) == true)
                 continue;
+            // Symlink defense: refuse to descend into directories whose
+            // canonical (symlink-resolved) path falls outside the original
+            // root. Walking each step's parent stayed inside-root by
+            // induction, so we only need to check the immediate child here:
+            // any deeper-tree symlink pointing outside root will be caught on
+            // the recursion's next pass.
+            if (!IsInsideCanonicalRoot(dir, canonicalRoot))
+                continue;
             keptDirs.Add(dir);
         }
 
@@ -162,8 +180,57 @@ public static class FileWalker
 
         foreach (var dir in keptDirs)
         {
-            foreach (var f in Walk(root, dir, extensions, ignoreDirs, gitignore))
+            foreach (var f in Walk(root, dir, extensions, ignoreDirs, gitignore, canonicalRoot))
                 yield return f;
         }
+    }
+
+    /// <summary>
+    /// Path comparison mode for the host filesystem — case-insensitive on
+    /// Windows, case-sensitive on Linux. macOS is mixed in practice (HFS+/APFS
+    /// are case-insensitive by default but case-sensitive volumes exist); we
+    /// pick the conservative case-sensitive default there. The check rejects
+    /// out-of-root paths in both directions so a stricter comparison only
+    /// risks rejecting legitimate symlinks differing in case, not letting an
+    /// attacker through.
+    /// </summary>
+    private static readonly StringComparison PathComparison =
+        OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+    /// <summary>
+    /// Resolve <paramref name="path"/> through any symlinks at the final
+    /// component and return its absolute canonical form. Earlier components
+    /// are not resolved by this single call; the walker invokes
+    /// <see cref="IsInsideCanonicalRoot"/> at every descent step, so an
+    /// inductive argument covers parent symlinks: every directory we
+    /// descended into has already been verified to canonicalise inside root.
+    /// </summary>
+    private static string Canonicalize(string path)
+    {
+        try
+        {
+            var info = new DirectoryInfo(path);
+            var target = info.ResolveLinkTarget(returnFinalTarget: true);
+            return System.IO.Path.GetFullPath(target?.FullName ?? path);
+        }
+        catch
+        {
+            // Permission / IO errors fall back to the textual full path; the
+            // caller's ancestry check still applies.
+            return System.IO.Path.GetFullPath(path);
+        }
+    }
+
+    private static bool IsInsideCanonicalRoot(string candidate, string canonicalRoot)
+    {
+        var canonicalCandidate = Canonicalize(candidate);
+        if (string.Equals(canonicalCandidate, canonicalRoot, PathComparison))
+            return true;
+        var prefix = canonicalRoot.EndsWith(System.IO.Path.DirectorySeparatorChar)
+            ? canonicalRoot
+            : canonicalRoot + System.IO.Path.DirectorySeparatorChar;
+        return canonicalCandidate.StartsWith(prefix, PathComparison);
     }
 }

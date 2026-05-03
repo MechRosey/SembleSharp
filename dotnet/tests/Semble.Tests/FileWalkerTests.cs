@@ -102,6 +102,76 @@ public class WalkFilesTests : IDisposable
         var found = WalkSet(exts);
         Assert.DoesNotContain(found, p => p.Contains("node_modules", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void Symlinked_Directory_Pointing_Outside_Root_Is_Skipped()
+    {
+        // Symlinks need administrator on Windows; skip there.
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var outside = Path.Combine(Path.GetTempPath(), "semble-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "secret.py"), "API_KEY = 'leaked'\n");
+            File.WriteAllText(Path.Combine(_tmp, "real.py"), "ok = 1\n");
+            Directory.CreateSymbolicLink(Path.Combine(_tmp, "evil_link"), outside);
+
+            var found = WalkSet();
+            Assert.Contains("real.py", found);
+            Assert.DoesNotContain(found, p => p.Contains("secret.py", StringComparison.Ordinal));
+        }
+        finally
+        {
+            try { Directory.Delete(outside, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
+    public void Symlinked_Directory_Pointing_Inside_Root_Is_Followed()
+    {
+        // In-tree symlinks (e.g. `latest -> versions/v3`) are legitimate and
+        // should still be walked. The defense only excludes paths whose
+        // canonical resolution escapes the root.
+        if (OperatingSystem.IsWindows())
+            return;
+
+        Touch("real_dir/inside.py");
+        Directory.CreateSymbolicLink(
+            Path.Combine(_tmp, "alias_link"),
+            Path.Combine(_tmp, "real_dir"));
+
+        var found = WalkSet();
+        Assert.Contains("real_dir/inside.py", found);
+        Assert.Contains("alias_link/inside.py", found);
+    }
+
+    [Fact]
+    public void Deeper_Tree_Symlink_Pointing_Outside_Is_Caught_On_Recursion()
+    {
+        // A real subdirectory containing a symlink that points out of root
+        // should still walk the real subdir; only the escape symlink is skipped.
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var outside = Path.Combine(Path.GetTempPath(), "semble-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "stolen.py"), "stolen = True\n");
+            Touch("subdir/legit.py");
+            Directory.CreateSymbolicLink(Path.Combine(_tmp, "subdir", "escape"), outside);
+
+            var found = WalkSet();
+            Assert.Contains("subdir/legit.py", found);
+            Assert.DoesNotContain(found, p => p.Contains("stolen.py", StringComparison.Ordinal));
+        }
+        finally
+        {
+            try { Directory.Delete(outside, recursive: true); } catch { /* best effort */ }
+        }
+    }
 }
 
 public class LanguageForPathTests
