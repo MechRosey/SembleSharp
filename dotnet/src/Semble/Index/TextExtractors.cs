@@ -11,13 +11,16 @@ namespace Semble.Index;
 /// </summary>
 /// <remarks>
 /// Default priority for PDF and Office formats:
-///   1. <c>markitdown</c>  — best output quality (heading recovery,
-///                          table preservation), requires Python install
-///   2. <c>pdftotext</c>   — Poppler binary, decent layout-preserving text,
-///                          PDF only
-/// Both shell out, neither is bundled. When neither is available the file
-/// is skipped at chunk time (the file walker still yields it; the chunker
-/// returns []).
+///   1. <c>markitdown</c>      — best output quality (heading recovery,
+///                              table preservation), requires Python install
+///   2. <c>pdftotext</c>       — Poppler binary, decent layout-preserving text,
+///                              PDF only
+///   3. <c>openxml-word</c>    — pure-managed .docx fallback via
+///                              DocumentFormat.OpenXml, always available
+/// All shell-out backends are gated on a host PATH probe; the openxml-word
+/// fallback is always available so <c>.docx</c> is indexable on hosts with
+/// no Python and no Poppler. When neither shell-out nor managed backend
+/// matches the file is skipped at chunk time.
 ///
 /// <see cref="Default"/> is the registry the production indexer reads from;
 /// tests can construct a fresh instance with mocked extractors.
@@ -72,17 +75,20 @@ public sealed class TextExtractors
     {
         var markitdown = new MarkItDownExtractor();
         var pdftotext = new PdftotextExtractor();
+        var openxmlWord = new OpenXmlWordExtractor();
 
-        // markitdown handles PDF + Office uniformly; pdftotext only PDF.
+        // markitdown handles PDF + Office uniformly; pdftotext only PDF;
+        // openxml-word is the pure-managed .docx fallback.
         var pdfBackends = new ITextExtractor[] { markitdown, pdftotext };
-        var officeBackends = new ITextExtractor[] { markitdown };
+        var docxBackends = new ITextExtractor[] { markitdown, openxmlWord };
+        var otherOfficeBackends = new ITextExtractor[] { markitdown };
 
         var map = new Dictionary<string, IReadOnlyList<ITextExtractor>>(StringComparer.Ordinal)
         {
             [".pdf"] = pdfBackends,
-            [".docx"] = officeBackends,
-            [".xlsx"] = officeBackends,
-            [".pptx"] = officeBackends,
+            [".docx"] = docxBackends,
+            [".xlsx"] = otherOfficeBackends,
+            [".pptx"] = otherOfficeBackends,
         };
         return new TextExtractors(map);
     }
