@@ -1,24 +1,23 @@
-# Semble (.NET port)
+﻿# Semble (.NET port)
 
-Strangler-pattern port of [Semble](../src/semble/) (a Python code-indexing MCP
-tool) to modern .NET 8. The Python tree under `../src/semble/` and `../tests/`
-remains intact and runnable; this directory is a parallel implementation that
-shares the repo until full parity is verified.
+Pure .NET 8 port of [Semble](https://github.com/MinishLab/semble) -- a fast,
+accurate, token-efficient code-search library for agents. The Python source has
+been removed; this directory is the canonical implementation.
 
 ## Layout
 
 ```
 dotnet/
-├── Semble.sln
-├── Directory.Build.props          # nullable, latest LangVersion, warnings-as-errors
-├── src/
-│   ├── Semble/                    # library: types, tokens, ranking, index, search, formatting
-│   ├── Semble.Cli/                # search / find-related / init subcommands
-│   └── Semble.Mcp/                # MCP stdio server (ModelContextProtocol 1.2.0)
-└── tests/
-    ├── Semble.Tests/              # 155 cases (1 skipped for tree-sitter)
-    ├── Semble.Cli.Tests/          # 13 cases
-    └── Semble.Mcp.Tests/          # 28 cases
++-- Semble.sln
++-- Directory.Build.props          # nullable, latest LangVersion, warnings-as-errors
++-- src/
+|   +-- Semble/                    # library: types, tokens, ranking, index, search, formatting
+|   +-- Semble.Cli/                # search / find-related / init subcommands
+|   +-- Semble.Mcp/                # MCP stdio server (ModelContextProtocol 1.2.0)
++-- tests/
+    +-- Semble.Tests/              # 230 cases
+    +-- Semble.Cli.Tests/          # 17 cases
+    +-- Semble.Mcp.Tests/          # 28 cases
 ```
 
 ## Build / test
@@ -48,44 +47,38 @@ the migration branch, on Ubuntu / macOS / Windows.
 |---|---|---|
 | 0  | Solution scaffold + CI                              | done |
 | 1  | Core types (`Chunk`, `SearchResult`, `IEncoder`)    | done |
-| 2  | Tokenisation (`tokens.py`)                          | done — byte-for-byte parity vs Python |
-| 3  | Ranking (`weighting`, `boosting`, `penalties`)      | done — exact-value parity (2.75 / 1.625 / 2.75) |
-| 4  | File walker + `.gitignore`                          | done — minimal pathspec subset, validated against pathspec |
-| 5  | Code-aware chunker                                  | done — line-based default + Roslyn for C# + tree-sitter for C++. tree-sitter source is **vendored** under `dotnet/native/` and built from source by `build-natives.{sh,cmd}`; no third-party tree-sitter NuGets are referenced. Other languages still fall back to line-based |
-| 6  | BM25 + path enrichment                              | done — bit-for-bit parity with `bm25s.BM25(method='lucene')` |
-| 7  | Dense backend                                       | done — brute-force cosine + stable top-k |
+| 2  | Tokenisation (`tokens.py`)                          | done -- byte-for-byte parity vs Python |
+| 3  | Ranking (`weighting`, `boosting`, `penalties`)      | done -- exact-value parity (2.75 / 1.625 / 2.75) |
+| 4  | File walker + `.gitignore`                          | done -- minimal pathspec subset, validated against pathspec |
+| 5  | Code-aware chunker                                  | done -- line-based default + Roslyn for C# + tree-sitter for C++. tree-sitter source is **vendored** under `dotnet/native/` and built from source by `build-natives.{sh,cmd}`; no third-party tree-sitter NuGets are referenced. Other languages still fall back to line-based |
+| 6  | BM25 + path enrichment                              | done -- bit-for-bit parity with `bm25s.BM25(method='lucene')` |
+| 7  | Dense backend                                       | done -- brute-force cosine + stable top-k |
 | 8  | Index orchestration (`FromPath` / `FromGit`)        | done |
-| 9  | Search (`semantic` / `bm25` / `hybrid`)             | done — RRF k=60, full ranking pipeline |
-| 11 | CLI (`search`, `find-related`, `init`)              | done — embedded agent-search.md resource |
-| 12 | MCP server                                          | done — `ModelContextProtocol` SDK + stdio transport |
-| 10 | Default static-embedding encoder (`PotionCodeEncoder`) | done — pure-C# loader for model2vec / sentence-transformers folder layout (`tokenizer.json` + `model.safetensors` + `config.json`); WordPiece tokenizer hand-rolled; runtime download is the operator's responsibility (no auto-download yet) |
-| 13 | Remove Python sources, update root README           | gated on Chunk 10 + end-to-end parity check |
+| 9  | Search (`semantic` / `bm25` / `hybrid`)             | done -- RRF k=60, full ranking pipeline |
+| 11 | CLI (`search`, `find-related`, `init`, `download-model`) | done -- embedded agent-search.md resource; built-in HTTPS downloader |
+| 12 | MCP server                                          | done -- `ModelContextProtocol` SDK + stdio transport |
+| 10 | Default static-embedding encoder (`PotionCodeEncoder`) | done -- pure-C# loader for model2vec / sentence-transformers folder layout; WordPiece tokenizer hand-rolled; F32 and F64 weight tensors supported |
+| 13 | Remove Python sources, update root README           | done -- parity verified; Python source, tests, and tooling removed |
 
 ## What's not ported
 
-- **`benchmarks/`** — explicitly out of scope for the .NET port. Stays Python.
-- **Code-aware chunking for languages other than C# and C++** — `Chunker.ChunkSource`
+- **`benchmarks/`** -- explicitly out of scope for the .NET port. Stays Python.
+- **Code-aware chunking for languages other than C# and C++** -- `Chunker.ChunkSource`
   uses Roslyn for `.cs`, tree-sitter for `.cpp`, and falls back to the line-based
   chunker for everything else. Adding more grammars is a per-language follow-up
   (just add the `tree-sitter-<lang>` NuGet, a `tree_sitter_<lang>()` DllImport,
   and a splittable-kinds whitelist).
-- **Auto-download of the default model** — `Dense.LoadModel()` resolves a
-  model path in this order: explicit `modelPath` argument → `SEMBLE_MODEL_PATH`
-  environment variable → `~/.cache/semble/minishlab/potion-code-16M/`. If none
-  exist, it throws `DirectoryNotFoundException` with a message telling the
-  user to run e.g. `huggingface-cli download minishlab/potion-code-16M
-  --local-dir ~/.cache/semble/minishlab/potion-code-16M`. A built-in HTTPS
-  downloader with SHA256 verification is a follow-up.
+- **SHA-256 verification on model download** -- `semble download-model` fetches
+  the three required files over TLS but does not yet verify their SHA-256 hashes
+  against the upstream LFS manifest. Connections are TLS-verified by
+  `HttpClient`; hash pinning is a follow-up.
 
 ## Running the binaries
 
-The default encoder is `minishlab/potion-code-16M`. Download it once from
-HuggingFace:
+Download the default encoder once (requires internet; saves to `~/.cache/semble/`):
 
 ```bash
-pip install --user huggingface_hub
-huggingface-cli download minishlab/potion-code-16M \
-    --local-dir ~/.cache/semble/minishlab/potion-code-16M
+dotnet run --project dotnet/src/Semble.Cli -- download-model
 ```
 
 Then:
@@ -105,10 +98,10 @@ To use a different on-disk model, set `SEMBLE_MODEL_PATH=/path/to/model-folder`.
 
 Golden values cross-checked against the Python implementation are encoded as
 test assertions:
-- `Tokens.Tokenize` — every docstring example + edge cases (`_foo`, `_foo_bar`,
-  `XMLParser`, `getHTTPResponse`, …).
-- `Boosting.ApplyQueryBoost` — exact post-boost scores 2.75 / 1.625 / 2.75 for
+- `Tokens.Tokenize` -- every docstring example + edge cases (`_foo`, `_foo_bar`,
+  `XMLParser`, `getHTTPResponse`, ...).
+- `Boosting.ApplyQueryBoost` -- exact post-boost scores 2.75 / 1.625 / 2.75 for
   symbol / NL-with-symbol / namespace-qualified queries.
-- `Bm25.GetScores` — six-decimal-place parity with `bm25s.BM25(method='lucene')`.
-- `Sparse.EnrichForBm25` — string-equality parity for five representative paths.
-- `Formatting.FormatResults` — byte-for-byte parity with the Python output.
+- `Bm25.GetScores` -- six-decimal-place parity with `bm25s.BM25(method='lucene')`.
+- `Sparse.EnrichForBm25` -- string-equality parity for five representative paths.
+- `Formatting.FormatResults` -- byte-for-byte parity with the Python output.

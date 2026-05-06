@@ -15,7 +15,7 @@ public sealed class CliApp
 
     private static readonly HashSet<string> CliDispatchArgs = new(StringComparer.Ordinal)
     {
-        "search", "find-related", "init", "-h", "--help",
+        "search", "find-related", "init", "download-model", "-h", "--help",
     };
 
     public Func<string, IEncoder?, SembleIndex> IndexFromPath { get; init; } =
@@ -25,6 +25,9 @@ public sealed class CliApp
         (url, @ref, model) => SembleIndex.FromGit(url, @ref, model);
 
     public Func<Task> McpServeAsync { get; init; } = () => Task.CompletedTask;
+
+    public Func<string, string, Action<string, long, long>?, Task> DownloadModelAsync { get; init; } =
+        (modelId, destDir, progress) => Semble.Index.ModelDownloader.DownloadAsync(modelId, destDir, progress);
 
     public TextWriter Stdout { get; init; } = Console.Out;
     public TextWriter Stderr { get; init; } = Console.Error;
@@ -78,6 +81,7 @@ public sealed class CliApp
             "search" => RunSearch(args.AsSpan(1).ToArray()),
             "find-related" => RunFindRelated(args.AsSpan(1).ToArray()),
             "init" => RunInit(args.AsSpan(1).ToArray()),
+            "download-model" => RunDownloadModel(args.AsSpan(1).ToArray()),
             _ => UnknownCommand(args[0]),
         };
     }
@@ -90,12 +94,13 @@ public sealed class CliApp
 
     private void PrintTopLevelHelp()
     {
-        Stdout.WriteLine("usage: semble {search,find-related,init} ...");
+        Stdout.WriteLine("usage: semble {search,find-related,init,download-model} ...");
         Stdout.WriteLine();
         Stdout.WriteLine("subcommands:");
-        Stdout.WriteLine("  search        Search a codebase.");
-        Stdout.WriteLine("  find-related  Find code similar to a specific location.");
-        Stdout.WriteLine("  init          Write .claude/agents/semble-search.md.");
+        Stdout.WriteLine("  search          Search a codebase.");
+        Stdout.WriteLine("  find-related    Find code similar to a specific location.");
+        Stdout.WriteLine("  init            Write .claude/agents/semble-search.md.");
+        Stdout.WriteLine("  download-model  Download the default embedding model.");
     }
 
     private int RunSearch(string[] args)
@@ -176,6 +181,61 @@ public sealed class CliApp
         using var stream = asm.GetManifestResourceStream(name)!;
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
+    }
+
+    public int RunDownloadModel(string[] args)
+    {
+        string? modelId = null;
+        string? destDir = null;
+        for (int i = 0; i < args.Length; i++)
+        {
+            if ((args[i] == "--model-id" || args[i] == "-m") && i + 1 < args.Length)
+            {
+                modelId = args[++i];
+            }
+            else if ((args[i] == "--dest" || args[i] == "-d") && i + 1 < args.Length)
+            {
+                destDir = args[++i];
+            }
+            else if (args[i] == "-h" || args[i] == "--help")
+            {
+                Stdout.WriteLine("usage: semble download-model [--model-id ID] [--dest DIR]");
+                Stdout.WriteLine();
+                Stdout.WriteLine("  --model-id  HuggingFace model repo (default: minishlab/potion-code-16M)");
+                Stdout.WriteLine("  --dest      Local directory (default: ~/.cache/semble/<model-id>)");
+                return 0;
+            }
+        }
+
+        modelId ??= Semble.Index.Dense.DefaultModelName;
+        if (string.IsNullOrEmpty(destDir))
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            destDir = System.IO.Path.Combine(home, ".cache", "semble", modelId);
+        }
+
+        Stdout.WriteLine($"Downloading {modelId} to {destDir} ...");
+        try
+        {
+            DownloadModelAsync(
+                modelId,
+                destDir,
+                (file, recv, total) =>
+                {
+                    string bar = total > 0
+                        ? $" {recv * 100 / total,3}%"
+                        : $" {recv / 1024 / 1024} MB";
+                    Stdout.Write($"\r  {file}{bar}    ");
+                }).GetAwaiter().GetResult();
+            Stdout.WriteLine();
+            Stdout.WriteLine($"Done. Set SEMBLE_MODEL_PATH={destDir} or pass --model-path to use a non-default location.");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Stderr.WriteLine($"download-model failed: {ex.Message}");
+            return 1;
+        }
     }
 
     private SembleIndex OpenIndex(string path)

@@ -33,9 +33,7 @@ Semble is a code search library built for agents. It returns the exact code snip
 2. The default embedding model (downloaded once):
 
 ```bash
-pip install --user huggingface_hub
-huggingface-cli download minishlab/potion-code-16M \
-    --local-dir ~/.cache/semble/minishlab/potion-code-16M
+dotnet run --project dotnet/src/Semble.Cli -- download-model
 ```
 
 ### Search a local repo

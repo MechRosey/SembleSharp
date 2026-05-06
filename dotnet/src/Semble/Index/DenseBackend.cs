@@ -114,18 +114,55 @@ public static class Dense
     ///   2. <c>SEMBLE_MODEL_PATH</c> environment variable
     ///   3. <c>~/.cache/semble/&lt;DefaultModelName&gt;/</c>
     /// </summary>
+    /// <param name="modelPath">Explicit model directory; overrides env and cache.</param>
+    /// <param name="autoDownload">
+    /// When <c>true</c> and the resolved path does not exist, download the
+    /// default model from HuggingFace Hub into the cache directory before
+    /// loading.  Progress is written to <see cref="Console.Error"/>.
+    /// </param>
     /// <exception cref="DirectoryNotFoundException">
-    /// If no path resolves to an existing directory. The message tells the user
-    /// how to download the model from HuggingFace.
+    /// If no path resolves to an existing directory and
+    /// <paramref name="autoDownload"/> is <c>false</c>. The message tells the
+    /// user how to download the model from HuggingFace.
     /// </exception>
-    public static IEncoder LoadModel(string? modelPath = null)
+    public static IEncoder LoadModel(string? modelPath = null, bool autoDownload = false)
     {
-        var resolved = ResolveModelPath(modelPath);
+        var resolved = TryResolveModelPath(modelPath, out var defaultDir);
+        if (resolved is null)
+        {
+            if (!autoDownload)
+                throw new DirectoryNotFoundException(
+                    $"No Semble embedding model found. Pass --model-path, set {ModelPathEnvVar}, " +
+                    $"or download the default model into '{defaultDir}', e.g.:\n" +
+                    $"  huggingface-cli download {DefaultModelName} --local-dir '{defaultDir}'\n" +
+                    $"Or run: semble download-model");
+
+            Console.Error.WriteLine($"Downloading {DefaultModelName} to {defaultDir} ...");
+            ModelDownloader.DownloadAsync(
+                DefaultModelName,
+                defaultDir!,
+                (file, recv, total) =>
+                {
+                    string bar = total > 0
+                        ? $" {recv * 100 / total,3}%"
+                        : $" {recv / 1024 / 1024} MB";
+                    Console.Error.Write($"\r  {file}{bar}    ");
+                }).GetAwaiter().GetResult();
+            Console.Error.WriteLine();
+            resolved = defaultDir!;
+        }
         return Encoders.PotionCodeEncoder.LoadFromDirectory(resolved);
     }
 
-    private static string ResolveModelPath(string? explicitPath)
+    /// <summary>
+    /// Returns the resolved model path, or null if not found.
+    /// <paramref name="defaultDir"/> is always set to the default cache path.
+    /// </summary>
+    private static string? TryResolveModelPath(string? explicitPath, out string defaultDir)
     {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        defaultDir = System.IO.Path.Combine(home, ".cache", "semble", DefaultModelName);
+
         if (!string.IsNullOrEmpty(explicitPath))
             return explicitPath;
 
@@ -133,15 +170,7 @@ public static class Dense
         if (!string.IsNullOrEmpty(fromEnv))
             return fromEnv;
 
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var defaultDir = System.IO.Path.Combine(home, ".cache", "semble", DefaultModelName);
-        if (Directory.Exists(defaultDir))
-            return defaultDir;
-
-        throw new DirectoryNotFoundException(
-            $"No Semble embedding model found. Pass --model-path, set {ModelPathEnvVar}, " +
-            $"or download the default model into '{defaultDir}', e.g.:\n" +
-            $"  huggingface-cli download {DefaultModelName} --local-dir '{defaultDir}'");
+        return Directory.Exists(defaultDir) ? defaultDir : null;
     }
 
     /// <summary>Embed chunk content via the supplied encoder.</summary>

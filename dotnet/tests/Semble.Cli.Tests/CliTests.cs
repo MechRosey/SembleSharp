@@ -249,6 +249,80 @@ public class CliDispatchTests
     }
 }
 
+public class CliDownloadModelTests
+{
+    [Fact]
+    public void DownloadModel_Help_Returns_Zero_And_Prints_Usage()
+    {
+        var stdout = new StringWriter();
+        var app = new CliApp { Stdout = stdout, Stderr = new StringWriter() };
+        var rc = app.Run(new[] { "download-model", "--help" });
+        Assert.Equal(0, rc);
+        Assert.Contains("download-model", stdout.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DownloadModel_Calls_Downloader_With_Default_ModelId()
+    {
+        string? capturedModelId = null;
+        string? capturedDestDir = null;
+        var stdout = new StringWriter();
+        var app = new CliApp
+        {
+            Stdout = stdout,
+            Stderr = new StringWriter(),
+            DownloadModelAsync = (modelId, destDir, _) =>
+            {
+                capturedModelId = modelId;
+                capturedDestDir = destDir;
+                return Task.CompletedTask;
+            },
+        };
+        var rc = app.Run(new[] { "download-model", "--dest", "/tmp/model" });
+        Assert.Equal(0, rc);
+        Assert.Equal(Semble.Index.Dense.DefaultModelName, capturedModelId);
+        Assert.Equal("/tmp/model", capturedDestDir);
+    }
+
+    [Fact]
+    public void DownloadModel_Calls_Downloader_With_Explicit_ModelId_And_Dest()
+    {
+        string? capturedModelId = null;
+        string? capturedDestDir = null;
+        var stdout = new StringWriter();
+        var app = new CliApp
+        {
+            Stdout = stdout,
+            Stderr = new StringWriter(),
+            DownloadModelAsync = (modelId, destDir, _) =>
+            {
+                capturedModelId = modelId;
+                capturedDestDir = destDir;
+                return Task.CompletedTask;
+            },
+        };
+        var rc = app.Run(new[] { "download-model", "--model-id", "org/my-model", "--dest", "/tmp/my-model" });
+        Assert.Equal(0, rc);
+        Assert.Equal("org/my-model", capturedModelId);
+        Assert.Equal("/tmp/my-model", capturedDestDir);
+    }
+
+    [Fact]
+    public void DownloadModel_Downloader_Failure_Prints_Error_And_Returns_One()
+    {
+        var stderr = new StringWriter();
+        var app = new CliApp
+        {
+            Stdout = new StringWriter(),
+            Stderr = stderr,
+            DownloadModelAsync = (_, _, _) => Task.FromException(new HttpRequestException("connection refused")),
+        };
+        var rc = app.Run(new[] { "download-model", "--dest", "/tmp/model" });
+        Assert.Equal(1, rc);
+        Assert.Contains("connection refused", stderr.ToString(), StringComparison.Ordinal);
+    }
+}
+
 public class AgentFileTests
 {
     [Fact]
