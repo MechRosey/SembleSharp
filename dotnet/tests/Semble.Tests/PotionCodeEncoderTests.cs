@@ -91,12 +91,14 @@ public class PotionCodeEncoderTests : IDisposable
             JsonSerializer.Serialize(json));
     }
 
-    private void WriteSafetensors(float[,] embeddings, float[]? weights)
+    private void WriteSafetensors(float[,] embeddings, float[]? weights, bool weightsAsF64 = false)
     {
         int rows = embeddings.GetLength(0);
         int cols = embeddings.GetLength(1);
         long embBytes = (long)rows * cols * sizeof(float);
-        long wBytes = weights is null ? 0 : (long)weights.Length * sizeof(float);
+        int wElemBytes = weightsAsF64 ? sizeof(double) : sizeof(float);
+        long wBytes = weights is null ? 0 : (long)weights.Length * wElemBytes;
+        string wDtype = weightsAsF64 ? "F64" : "F32";
 
         // Header: { "embeddings": {...}, ["weights": {...}] }
         var sb = new StringBuilder();
@@ -105,7 +107,8 @@ public class PotionCodeEncoderTests : IDisposable
           .Append("],\"data_offsets\":[0,").Append(embBytes).Append("]}");
         if (weights is not null)
         {
-            sb.Append(",\"weights\":{\"dtype\":\"F32\",\"shape\":[")
+            sb.Append(",\"weights\":{\"dtype\":\"").Append(wDtype)
+              .Append("\",\"shape\":[")
               .Append(weights.Length)
               .Append("],\"data_offsets\":[")
               .Append(embBytes).Append(',').Append(embBytes + wBytes).Append("]}");
@@ -130,11 +133,23 @@ public class PotionCodeEncoderTests : IDisposable
 
         if (weights is not null)
         {
-            var wBuf = new byte[sizeof(float)];
-            foreach (var w in weights)
+            if (weightsAsF64)
             {
-                BinaryPrimitives.WriteSingleLittleEndian(wBuf, w);
-                stream.Write(wBuf);
+                var wBuf = new byte[sizeof(double)];
+                foreach (var w in weights)
+                {
+                    BinaryPrimitives.WriteDoubleLittleEndian(wBuf, w);
+                    stream.Write(wBuf);
+                }
+            }
+            else
+            {
+                var wBuf = new byte[sizeof(float)];
+                foreach (var w in weights)
+                {
+                    BinaryPrimitives.WriteSingleLittleEndian(wBuf, w);
+                    stream.Write(wBuf);
+                }
             }
         }
     }
@@ -263,6 +278,72 @@ public class PotionCodeEncoderTests : IDisposable
     }
 
     [Fact]
+    public void Encode_With_F64_Weights_Produces_Same_Result_As_F32_Weights()
+    {
+        // The real minishlab/potion-code-16M stores 'weights' as F64.
+        // Verify our reader accepts F64 and output matches equivalent F32 weights.
+        var dirF32 = WriteSyntheticModel(normalize: false, withWeights: true);
+        var encF32 = PotionCodeEncoder.LoadFromDirectory(dirF32);
+        var resultF32 = encF32.Encode(new[] { "foo bar" });
+
+        // Build a second model dir (independent of _tmp) with F64 weights.
+        var dir64 = Path.Combine(Path.GetTempPath(), "semble-f64-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir64);
+        try
+        {
+            // Copy tokenizer.json and config.json from the F32 model -- identical.
+            File.Copy(Path.Combine(dirF32, "tokenizer.json"), Path.Combine(dir64, "tokenizer.json"));
+            File.Copy(Path.Combine(dirF32, "config.json"),    Path.Combine(dir64, "config.json"));
+
+            // Write model.safetensors with F64 weights (all 1.0) + same F32 embeddings.
+            const int rows = 6, cols = 4;
+            var embeddings = new float[rows, cols]
+            {
+                { 0f, 0f, 0f, 0f }, { 0.1f, 0.1f, 0.1f, 0.1f },
+                { 1f, 0f, 0f, 0f }, { 0f, 1f, 0f, 0f },
+                { 0f, 0f, 1f, 0f }, { 0f, 0f, 0f, 1f },
+            };
+            var weights64 = new double[] { 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 };
+            long embBytes = (long)rows * cols * sizeof(float);
+            long wBytes = (long)weights64.Length * sizeof(double);
+            var header =
+                $"{{\"embeddings\":{{\"dtype\":\"F32\",\"shape\":[{rows},{cols}],\"data_offsets\":[0,{embBytes}]}}" +
+                $",\"weights\":{{\"dtype\":\"F64\",\"shape\":[{weights64.Length}],\"data_offsets\":[{embBytes},{embBytes + wBytes}]}}}}";
+            var hBytes = Encoding.UTF8.GetBytes(header);
+            using (var s = File.Create(Path.Combine(dir64, "model.safetensors")))
+            {
+                Span<byte> lb = stackalloc byte[8];
+                BinaryPrimitives.WriteUInt64LittleEndian(lb, (ulong)hBytes.Length);
+                s.Write(lb);
+                s.Write(hBytes);
+                var rb = new byte[cols * sizeof(float)];
+                for (int r = 0; r < rows; r++)
+                {
+                    for (int c = 0; c < cols; c++)
+                        BinaryPrimitives.WriteSingleLittleEndian(rb.AsSpan(c * 4, 4), embeddings[r, c]);
+                    s.Write(rb);
+                }
+                var wb = new byte[sizeof(double)];
+                foreach (var w in weights64)
+                {
+                    BinaryPrimitives.WriteDoubleLittleEndian(wb, w);
+                    s.Write(wb);
+                }
+            } // stream closed before loading
+
+            var encF64 = PotionCodeEncoder.LoadFromDirectory(dir64);
+            var resultF64 = encF64.Encode(new[] { "foo bar" });
+
+            for (int d = 0; d < resultF32.GetLength(1); d++)
+                Assert.Equal(resultF32[0, d], resultF64[0, d], precision: 5);
+        }
+        finally
+        {
+            try { Directory.Delete(dir64, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void HuggingFaceTokenizer_Bpe_Model_Type_Throws_NotSupported()
     {
         var path = Path.Combine(_tmp, "bpe.json");
@@ -272,5 +353,79 @@ public class PotionCodeEncoderTests : IDisposable
             }
             """);
         Assert.Throws<NotSupportedException>(() => HuggingFaceTokenizer.LoadFromJson(path));
+    }
+}
+
+/// <summary>
+/// Real-model smoke test: loads minishlab/potion-code-16M from the default
+/// cache location (~/.cache/semble/minishlab/potion-code-16M) and performs
+/// a minimal sanity check. Skipped when the model is not present so CI
+/// passes without network access.
+/// </summary>
+public class RealModelSmokeTests
+{
+    private static string DefaultModelDir =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".cache", "semble", Semble.Index.Dense.DefaultModelName);
+
+    [SkippableFact]
+    public void Real_Model_Loads_And_Encodes_Two_Snippets_With_Correct_Dim()
+    {
+        Skip.IfNot(Directory.Exists(DefaultModelDir),
+            $"Real model not found at {DefaultModelDir}; run: huggingface-cli download minishlab/potion-code-16M --local-dir <dir>");
+
+        var enc = Semble.Encoders.PotionCodeEncoder.LoadFromDirectory(DefaultModelDir);
+
+        Assert.Equal(256, enc.Dim);
+        Assert.True(enc.VocabSize > 0);
+
+        var matrix = enc.Encode(new[]
+        {
+            "public static void Main(string[] args) { }",
+            "def compute_idf(docs): return math.log(len(docs) / df)",
+        });
+
+        Assert.Equal(2, matrix.GetLength(0));
+        Assert.Equal(256, matrix.GetLength(1));
+
+        // Both vectors should be unit length (model normalises).
+        for (int i = 0; i < 2; i++)
+        {
+            double sumSq = 0.0;
+            for (int d = 0; d < 256; d++)
+                sumSq += matrix[i, d] * (double)matrix[i, d];
+            Assert.Equal(1.0, sumSq, precision: 4);
+        }
+
+        // A C# snippet and a Python snippet should not be identical.
+        double dot = 0.0;
+        for (int d = 0; d < 256; d++)
+            dot += matrix[0, d] * (double)matrix[1, d];
+        Assert.NotEqual(1.0, dot, precision: 3);
+    }
+
+    [SkippableFact]
+    public void Real_Model_BM25_Search_Returns_Plausible_Results()
+    {
+        Skip.IfNot(Directory.Exists(DefaultModelDir),
+            $"Real model not found at {DefaultModelDir}");
+
+        // Test bin layout: dotnet/tests/Semble.Tests/bin/<config>/<tfm>/
+        // Semble source:  dotnet/src/Semble/  (5 levels up then src/Semble)
+        var srcDir = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Semble"));
+        Skip.IfNot(Directory.Exists(srcDir), $"dotnet src dir not found at {srcDir}");
+
+        var idx = Semble.SembleIndex.FromPath(
+            srcDir,
+            model: Semble.Encoders.PotionCodeEncoder.LoadFromDirectory(DefaultModelDir));
+
+        var results = idx.Search("BM25 sparse ranking", mode: "bm25", topK: 5);
+        Assert.NotEmpty(results);
+        // At least one of the top-5 chunks should mention bm25 in its content.
+        Assert.Contains(results, r => r.Chunk.Content.Contains("bm25",
+            StringComparison.OrdinalIgnoreCase) ||
+            r.Chunk.Content.Contains("Bm25", StringComparison.Ordinal));
     }
 }

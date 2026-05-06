@@ -122,19 +122,25 @@ internal static class SafeTensors
             return matrix;
         }
 
-        /// <summary>Read a 1-D float32 tensor by name; returns null if absent.</summary>
+        /// <summary>
+        /// Read a 1-D float tensor by name; returns null if absent.
+        /// Accepts F32 or F64 -- F64 values are narrowed to F32 on read.
+        /// </summary>
         public float[]? ReadFloat32VectorOrNull(string name)
         {
             if (!Tensors.TryGetValue(name, out var info))
                 return null;
-            if (!string.Equals(info.DType, "F32", StringComparison.Ordinal))
+            bool isF32 = string.Equals(info.DType, "F32", StringComparison.Ordinal);
+            bool isF64 = string.Equals(info.DType, "F64", StringComparison.Ordinal);
+            if (!isF32 && !isF64)
                 throw new InvalidDataException(
-                    $"safetensors: tensor '{name}' has dtype {info.DType}; expected F32");
+                    $"safetensors: tensor '{name}' has dtype {info.DType}; expected F32 or F64");
             if (info.Shape.Length != 1)
                 throw new InvalidDataException(
                     $"safetensors: tensor '{name}' has rank {info.Shape.Length}; expected rank 1");
             int n = info.Shape[0];
-            var bytes = new byte[n * sizeof(float)];
+            int elementBytes = isF64 ? sizeof(double) : sizeof(float);
+            var bytes = new byte[n * elementBytes];
             using var stream = System.IO.File.OpenRead(Path);
             stream.Seek(info.DataStart, SeekOrigin.Begin);
             int total = 0;
@@ -146,8 +152,18 @@ internal static class SafeTensors
                 total += read;
             }
             var vec = new float[n];
-            for (int i = 0; i < n; i++)
-                vec[i] = BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(i * sizeof(float), sizeof(float)));
+            if (isF64)
+            {
+                for (int i = 0; i < n; i++)
+                    vec[i] = (float)BinaryPrimitives.ReadDoubleLittleEndian(
+                        bytes.AsSpan(i * sizeof(double), sizeof(double)));
+            }
+            else
+            {
+                for (int i = 0; i < n; i++)
+                    vec[i] = BinaryPrimitives.ReadSingleLittleEndian(
+                        bytes.AsSpan(i * sizeof(float), sizeof(float)));
+            }
             return vec;
         }
 
