@@ -219,3 +219,5 @@ dotnet/**/obj/
 .vs/
 TestResults/
 
+
+ContextLog.md
