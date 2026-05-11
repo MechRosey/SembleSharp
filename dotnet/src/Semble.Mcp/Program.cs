@@ -28,32 +28,27 @@ internal static class Program
             }
         }
 
-        // Resolution order: --model-path arg, SEMBLE_MODEL_PATH env var,
-        // ~/.cache/semble/<DefaultModelName>/. If none exists, fail fast with
-        // a message that tells the operator how to download the model.
-        IEncoder model;
+        SembleMcpServer server;
         try
         {
-            model = Dense.LoadModel();
+            IEncoder model = Dense.LoadModel();
+            var cache = new IndexCache(model);
+            if (path is not null)
+            {
+                try { await cache.GetAsync(path, @ref); }
+                catch (Exception ex)
+                {
+                    await Console.Error.WriteLineAsync($"Pre-index of '{path}' failed: {ex.Message}");
+                    return 1;
+                }
+            }
+            server = new SembleMcpServer(cache, defaultSource: path);
         }
         catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException)
         {
             await Console.Error.WriteLineAsync(ex.Message);
-            return 1;
+            server = new SembleMcpServer(ex.Message);
         }
-
-        var cache = new IndexCache(model);
-        if (path is not null)
-        {
-            try { await cache.GetAsync(path, @ref); }
-            catch (Exception ex)
-            {
-                await Console.Error.WriteLineAsync($"Pre-index of '{path}' failed: {ex.Message}");
-                return 1;
-            }
-        }
-
-        var server = new SembleMcpServer(cache, defaultSource: path);
 
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
