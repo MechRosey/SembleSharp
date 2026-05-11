@@ -239,6 +239,48 @@ public class IndexCacheTests : IDisposable
     }
 }
 
+public class UnsafeProtocolTests
+{
+    [Theory]
+    [InlineData("ssh://github.com/org/repo")]
+    [InlineData("file:///tmp/repo")]
+    [InlineData("git+ssh://git@github.com/org/repo")]
+    [InlineData("git@github.com:org/repo")]
+    public async Task Search_Rejects_Unsafe_Transport(string unsafeRepo)
+    {
+        int fromGitCallCount = 0;
+        var cache = new IndexCache(new MockEncoder())
+        {
+            FromGit = (_, _, _) => { fromGitCallCount++; throw new InvalidOperationException("should not be called"); },
+        };
+        var server = new SembleMcpServer(cache);
+        var text = await server.CallToolAsync("search", new Dictionary<string, object?> { ["query"] = "foo", ["repo"] = unsafeRepo });
+        Assert.Contains("not supported", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, fromGitCallCount);
+    }
+
+    [Theory]
+    [InlineData("ssh://github.com/org/repo")]
+    [InlineData("file:///tmp/repo")]
+    [InlineData("git+ssh://git@github.com/org/repo")]
+    [InlineData("git@github.com:org/repo")]
+    public async Task FindRelated_Rejects_Unsafe_Transport(string unsafeRepo)
+    {
+        int fromGitCallCount = 0;
+        var cache = new IndexCache(new MockEncoder())
+        {
+            FromGit = (_, _, _) => { fromGitCallCount++; throw new InvalidOperationException("should not be called"); },
+        };
+        var server = new SembleMcpServer(cache);
+        var text = await server.CallToolAsync("find_related", new Dictionary<string, object?>
+        {
+            ["file_path"] = "src/foo.py", ["line"] = 1, ["repo"] = unsafeRepo,
+        });
+        Assert.Contains("not supported", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, fromGitCallCount);
+    }
+}
+
 public class ToolCallTests
 {
     private static IndexCache CacheFor(SembleIndex index) =>
