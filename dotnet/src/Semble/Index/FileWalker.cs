@@ -61,7 +61,7 @@ public static class FileWalker
     {
         ".git", ".hg", ".svn", "__pycache__", "node_modules", ".venv", "venv",
         ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".cache",
-        ".semble", "dist", "build", ".eggs",
+        ".semble", "dist", "build", ".eggs", ".next",
     };
 
     /// <summary>Return the language for a file path, or null for unknown extensions.</summary>
