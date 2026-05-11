@@ -152,6 +152,25 @@ public class IndexCacheTests : IDisposable
         Assert.Equal(1, callCount);
     }
 
+    [Fact]
+    public async Task Invalidate_Causes_Next_GetAsync_To_Rebuild()
+    {
+        var index = FakeIndex.Build(new[] { MakeChunk("x = 1", "src/foo.py") });
+        int callCount = 0;
+        var cache = new IndexCache(new MockEncoder())
+        {
+            FromPath = (_, _) => { callCount++; return index; },
+        };
+
+        await cache.GetAsync(_tmp);
+        Assert.Equal(1, callCount);
+
+        cache.Invalidate(_tmp);
+
+        await cache.GetAsync(_tmp);
+        Assert.Equal(2, callCount);
+    }
+
     private static string[] MakePaths(string prefix, int count)
     {
         var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"));
