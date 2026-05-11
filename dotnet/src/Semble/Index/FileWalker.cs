@@ -114,7 +114,7 @@ public static class FileWalker
 
         var gitignore = LoadRootGitignore(root);
         var canonicalRoot = Canonicalize(root);
-        return Walk(root, root, extensions, ignoreDirs, gitignore, canonicalRoot);
+        return Walk(root, root, extensions, ignoreDirs, gitignore, canonicalRoot, excludeNewerThan);
     }
 
     private static GitIgnoreMatcher? LoadRootGitignore(string root)
@@ -132,7 +132,8 @@ public static class FileWalker
         IReadOnlySet<string> extensions,
         IReadOnlySet<string> ignoreDirs,
         GitIgnoreMatcher? gitignore,
-        string canonicalRoot)
+        string canonicalRoot,
+        DateTime? excludeNewerThan = null)
     {
         string[] dirs;
         string[] files;
@@ -183,12 +184,16 @@ public static class FileWalker
                 if (gitignore.IsIgnored(relFile))
                     continue;
             }
+            if (excludeNewerThan.HasValue &&
+                File.GetLastWriteTimeUtc(file) > excludeNewerThan.Value)
+                continue;
+
             yield return file;
         }
 
         foreach (var dir in keptDirs)
         {
-            foreach (var f in Walk(root, dir, extensions, ignoreDirs, gitignore, canonicalRoot))
+            foreach (var f in Walk(root, dir, extensions, ignoreDirs, gitignore, canonicalRoot, excludeNewerThan))
                 yield return f;
         }
     }

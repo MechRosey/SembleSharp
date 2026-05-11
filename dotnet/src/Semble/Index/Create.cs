@@ -19,12 +19,13 @@ public static class Create
         IReadOnlySet<string>? extensions = null,
         IReadOnlySet<string>? ignore = null,
         bool includeTextFiles = false,
-        string? displayRoot = null)
+        string? displayRoot = null,
+        DateTime? excludeNewerThan = null)
     {
         var resolvedExtensions = FileWalker.FilterExtensions(extensions, includeTextFiles);
 
         var chunks = new List<Chunk>();
-        foreach (var filePath in FileWalker.WalkFiles(path, resolvedExtensions, ignore))
+        foreach (var filePath in FileWalker.WalkFiles(path, resolvedExtensions, ignore, excludeNewerThan))
         {
             if (new FileInfo(filePath).Length > 1_000_000)
                 continue;
