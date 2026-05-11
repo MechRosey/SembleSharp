@@ -138,10 +138,18 @@ public static class Dense
         if (Directory.Exists(defaultDir))
             return defaultDir;
 
+        var hfBase = $"https://huggingface.co/{DefaultModelName}";
+        var hfApi  = $"https://huggingface.co/api/models/{DefaultModelName}";
         throw new DirectoryNotFoundException(
             $"No Semble embedding model found. Pass --model-path, set {ModelPathEnvVar}, " +
-            $"or download the default model into '{defaultDir}', e.g.:\n" +
-            $"  huggingface-cli download {DefaultModelName} --local-dir '{defaultDir}'");
+            $"or download the default model into '{defaultDir}'.\n\n" +
+            $"Option A - huggingface-cli (if installed):\n" +
+            $"  huggingface-cli download {DefaultModelName} --local-dir \"{defaultDir}\"\n\n" +
+            $"Option B - direct download without extra tools:\n" +
+            $"  Files are listed at: {hfApi}\n" +
+            $"  Download each file from: {hfBase}/resolve/main/<filename>\n" +
+            $"  Save to: {defaultDir}\n\n" +
+            $"After downloading, restart your MCP client session for the change to take effect.");
     }
 
     /// <summary>Embed chunk content via the supplied encoder.</summary>

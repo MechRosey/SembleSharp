@@ -214,6 +214,7 @@ __marimo__/
 # .NET
 dotnet/**/bin/
 dotnet/**/obj/
+dotnet/native/*.obj
 *.user
 *.suo
 .vs/
