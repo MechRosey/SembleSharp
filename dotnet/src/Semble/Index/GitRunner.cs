@@ -24,6 +24,9 @@ public static class GitRunner
     /// <summary>Test seam: replace to mock the git invocation.</summary>
     public static Runner CurrentRunner { get; set; } = DefaultRunner;
 
+    /// <summary>Milliseconds before a clone is killed. Enforced by DefaultRunner.</summary>
+    public static int CloneTimeoutMs { get; set; } = 60_000;
+
     public static CloneResult DefaultRunner(string url, string? @ref, string targetDir)
     {
         var psi = new ProcessStartInfo
@@ -62,8 +65,12 @@ public static class GitRunner
         }
 
         p.StandardInput.Close();
-        var stderr = p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        return new CloneResult(p.ExitCode, stderr);
+        var stderrTask = Task.Run(() => p.StandardError.ReadToEnd());
+        if (!p.WaitForExit(CloneTimeoutMs))
+        {
+            try { p.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            return new CloneResult(-1, $"git clone timed out after {CloneTimeoutMs / 1000} s");
+        }
+        return new CloneResult(p.ExitCode, stderrTask.GetAwaiter().GetResult());
     }
 }

@@ -65,7 +65,8 @@ public sealed class SembleIndex
         IEncoder? model = null,
         IReadOnlySet<string>? extensions = null,
         IReadOnlySet<string>? ignore = null,
-        bool includeTextFiles = false)
+        bool includeTextFiles = false,
+        DateTime? excludeNewerThan = null)
     {
         if (!Directory.Exists(path) && !File.Exists(path))
             throw new DirectoryNotFoundException($"Path does not exist: {path}");
@@ -75,7 +76,8 @@ public sealed class SembleIndex
         model ??= Dense.LoadModel();
         var resolved = System.IO.Path.GetFullPath(path);
         var (bm25, semantic, chunks) = Create.CreateIndexFromPath(
-            resolved, model, extensions, ignore, includeTextFiles, displayRoot: resolved);
+            resolved, model, extensions, ignore, includeTextFiles, displayRoot: resolved,
+            excludeNewerThan: excludeNewerThan);
         return new SembleIndex(model, bm25, semantic, chunks);
     }
 
@@ -87,7 +89,8 @@ public sealed class SembleIndex
         IEncoder? model = null,
         IReadOnlySet<string>? extensions = null,
         IReadOnlySet<string>? ignore = null,
-        bool includeTextFiles = false)
+        bool includeTextFiles = false,
+        DateTime? excludeNewerThan = null)
     {
         var tempDir = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(), "semble-clone-" + Guid.NewGuid().ToString("N"));
@@ -110,7 +113,8 @@ public sealed class SembleIndex
             model ??= Dense.LoadModel();
             var resolved = System.IO.Path.GetFullPath(tempDir);
             var (bm25, semantic, chunks) = Create.CreateIndexFromPath(
-                resolved, model, extensions, ignore, includeTextFiles, displayRoot: resolved);
+                resolved, model, extensions, ignore, includeTextFiles, displayRoot: resolved,
+                excludeNewerThan: excludeNewerThan);
             return new SembleIndex(model, bm25, semantic, chunks);
         }
         finally

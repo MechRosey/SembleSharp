@@ -43,6 +43,16 @@ public class ChunkerTests : IDisposable
     }
 
     [Fact]
+    public void ChunkFile_Returns_Empty_For_Files_Larger_Than_One_Megabyte()
+    {
+        var path = Path.Combine(_tmp, "large.py");
+        File.WriteAllBytes(path, new byte[1_100_000]);
+        var chunks = Chunker.ChunkFile(path);
+        Assert.NotNull(chunks);
+        Assert.Empty(chunks);
+    }
+
+    [Fact]
     public void ChunkFile_Whitespace_Only_Returns_Empty()
     {
         var path = Path.Combine(_tmp, "empty.py");

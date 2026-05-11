@@ -71,6 +71,7 @@ public class WalkFilesTests : IDisposable
         Touch(".venv/lib/b.py");
         Touch("node_modules/pkg/c.py");
         Touch(".cache/uv/d.py");
+        Touch(".next/server/chunks/page.py");
         Assert.Equal(new HashSet<string> { "src/a.py" }, WalkSet());
     }
 
@@ -145,6 +146,24 @@ public class WalkFilesTests : IDisposable
         var found = WalkSet();
         Assert.Contains("real_dir/inside.py", found);
         Assert.Contains("alias_link/inside.py", found);
+    }
+
+    [Fact]
+    public void WalkFiles_Excludes_Files_Modified_After_Threshold()
+    {
+        Touch("old.py");
+        var threshold = DateTime.UtcNow;
+        // small pause so the new file has a newer mtime
+        System.Threading.Thread.Sleep(20);
+        Touch("new.py");
+
+        var exts = new HashSet<string>(StringComparer.Ordinal) { ".py" };
+        var found = FileWalker.WalkFiles(_tmp, exts, excludeNewerThan: threshold)
+            .Select(p => Path.GetRelativePath(_tmp, p).Replace(Path.DirectorySeparatorChar, '/'))
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("old.py", found);
+        Assert.DoesNotContain("new.py", found);
     }
 
     [Fact]

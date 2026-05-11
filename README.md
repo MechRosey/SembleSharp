@@ -121,6 +121,9 @@ semble search "save model to disk" https://github.com/MinishLab/model2vec
 # Find code similar to a known location
 semble find-related src/auth.cs 42 ./my-project
 
+# Show indexed file count, chunks, and total token budget
+semble savings ./my-project
+
 # Initialise sub-agent helper (writes .claude/agents/semble-search.md)
 semble init
 ```

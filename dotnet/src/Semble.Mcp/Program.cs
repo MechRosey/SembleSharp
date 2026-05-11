@@ -29,6 +29,7 @@ internal static class Program
         }
 
         SembleMcpServer server;
+        LocalIndexWatcher? watcher = null;
         try
         {
             IEncoder model = Dense.LoadModel();
@@ -41,6 +42,8 @@ internal static class Program
                     await Console.Error.WriteLineAsync($"Pre-index of '{path}' failed: {ex.Message}");
                     return 1;
                 }
+                if (!Formatting.IsGitUrl(path))
+                    watcher = new LocalIndexWatcher(cache, path);
             }
             server = new SembleMcpServer(cache, defaultSource: path);
         }

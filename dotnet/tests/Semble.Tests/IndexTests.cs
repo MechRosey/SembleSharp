@@ -74,6 +74,37 @@ public class IndexCreationTests : IClassFixture<TmpProjectFixture>
     }
 }
 
+public class FileSizeLimitTests : IDisposable
+{
+    private readonly string _tmp;
+
+    public FileSizeLimitTests()
+    {
+        _tmp = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "semble-size-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tmp);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_tmp, recursive: true); } catch { /* best effort */ }
+    }
+
+    [Fact]
+    public void FromPath_Skips_Files_Larger_Than_One_Megabyte()
+    {
+        var largePath = System.IO.Path.Combine(_tmp, "large.py");
+        File.WriteAllBytes(largePath, new byte[1_100_000]);
+
+        var smallPath = System.IO.Path.Combine(_tmp, "small.py");
+        File.WriteAllText(smallPath, "def foo(): pass\n");
+
+        var (_, _, chunks) = Create.CreateIndexFromPath(_tmp, new MockEncoder());
+        Assert.All(chunks, c => Assert.DoesNotContain("large.py", c.FilePath, StringComparison.Ordinal));
+        Assert.Contains(chunks, c => c.FilePath.Contains("small.py", StringComparison.Ordinal));
+    }
+}
+
 public class IndexedIndexTests : IClassFixture<TmpProjectFixture>
 {
     private readonly SembleIndex _index;
@@ -296,5 +327,24 @@ public class FromGitTests : IDisposable
         var ex = Assert.Throws<InvalidOperationException>(() =>
             SembleIndex.FromGit("https://github.com/x/y", model: new MockEncoder()));
         Assert.Contains("git is not installed", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DefaultRunner_Returns_Failed_Result_When_Clone_Exceeds_Timeout()
+    {
+        int originalTimeout = GitRunner.CloneTimeoutMs;
+        try
+        {
+            GitRunner.CloneTimeoutMs = 0;
+            var target = System.IO.Path.Combine(_tmp, "clone-timeout-test");
+            Directory.CreateDirectory(target);
+            var result = GitRunner.DefaultRunner("https://github.com/MinishLab/semble", null, target);
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("timed out", result.Stderr, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            GitRunner.CloneTimeoutMs = originalTimeout;
+        }
     }
 }

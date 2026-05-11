@@ -135,6 +135,32 @@ public class CliFindRelatedTests
     }
 }
 
+public class CliSavingsTests
+{
+    [Fact]
+    public void Savings_Command_Prints_Token_Stats()
+    {
+        var stdout = new StringWriter();
+        var chunks = new[]
+        {
+            MakeChunk("def foo(): pass", "src/foo.py"),
+            MakeChunk("def bar(): pass", "src/bar.py"),
+        };
+        var index = FakeIndex.Build(chunks);
+        var app = new CliApp
+        {
+            IndexFromPath = (_, _) => index,
+            Stdout = stdout,
+            Stderr = new StringWriter(),
+        };
+        var rc = app.Run(new[] { "savings", "/some/path" });
+        Assert.Equal(0, rc);
+        var s = stdout.ToString();
+        Assert.Contains("chunks", s, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("tokens", s, StringComparison.OrdinalIgnoreCase);
+    }
+}
+
 public class CliInitTests : IDisposable
 {
     private readonly string _tmp;

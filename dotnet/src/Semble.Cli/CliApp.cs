@@ -15,7 +15,7 @@ public sealed class CliApp
 
     private static readonly HashSet<string> CliDispatchArgs = new(StringComparer.Ordinal)
     {
-        "search", "find-related", "init", "download-model", "-h", "--help",
+        "search", "find-related", "init", "download-model", "savings", "-h", "--help",
     };
 
     public Func<string, IEncoder?, SembleIndex> IndexFromPath { get; init; } =
@@ -82,6 +82,7 @@ public sealed class CliApp
             "find-related" => RunFindRelated(args.AsSpan(1).ToArray()),
             "init" => RunInit(args.AsSpan(1).ToArray()),
             "download-model" => RunDownloadModel(args.AsSpan(1).ToArray()),
+            "savings" => RunSavings(args.AsSpan(1).ToArray()),
             _ => UnknownCommand(args[0]),
         };
     }
@@ -236,6 +237,22 @@ public sealed class CliApp
             Stderr.WriteLine($"download-model failed: {ex.Message}");
             return 1;
         }
+    }
+
+    private int RunSavings(string[] args)
+    {
+        string path = ".";
+        foreach (var a in args)
+        {
+            if (!a.StartsWith('-'))
+                path = a;
+        }
+        var index = OpenIndex(path);
+        int totalTokens = index.Chunks.Sum(c => Tokens.Tokenize(c.Content).Count);
+        Stdout.WriteLine($"Indexed files : {index.Stats.IndexedFiles}");
+        Stdout.WriteLine($"Total chunks  : {index.Stats.TotalChunks}");
+        Stdout.WriteLine($"Total tokens  : {totalTokens}");
+        return 0;
     }
 
     private SembleIndex OpenIndex(string path)

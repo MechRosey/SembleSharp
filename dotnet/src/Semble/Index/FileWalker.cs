@@ -61,7 +61,7 @@ public static class FileWalker
     {
         ".git", ".hg", ".svn", "__pycache__", "node_modules", ".venv", "venv",
         ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".cache",
-        ".semble", "dist", "build", ".eggs",
+        ".semble", "dist", "build", ".eggs", ".next",
     };
 
     /// <summary>Return the language for a file path, or null for unknown extensions.</summary>
@@ -105,7 +105,8 @@ public static class FileWalker
     public static IEnumerable<string> WalkFiles(
         string root,
         IReadOnlySet<string> extensions,
-        IReadOnlySet<string>? ignore = null)
+        IReadOnlySet<string>? ignore = null,
+        DateTime? excludeNewerThan = null)
     {
         var ignoreDirs = new HashSet<string>(DefaultIgnoredDirs, StringComparer.Ordinal);
         if (ignore is not null)
@@ -113,7 +114,7 @@ public static class FileWalker
 
         var gitignore = LoadRootGitignore(root);
         var canonicalRoot = Canonicalize(root);
-        return Walk(root, root, extensions, ignoreDirs, gitignore, canonicalRoot);
+        return Walk(root, root, extensions, ignoreDirs, gitignore, canonicalRoot, excludeNewerThan);
     }
 
     private static GitIgnoreMatcher? LoadRootGitignore(string root)
@@ -131,7 +132,8 @@ public static class FileWalker
         IReadOnlySet<string> extensions,
         IReadOnlySet<string> ignoreDirs,
         GitIgnoreMatcher? gitignore,
-        string canonicalRoot)
+        string canonicalRoot,
+        DateTime? excludeNewerThan = null)
     {
         string[] dirs;
         string[] files;
@@ -182,12 +184,16 @@ public static class FileWalker
                 if (gitignore.IsIgnored(relFile))
                     continue;
             }
+            if (excludeNewerThan.HasValue &&
+                File.GetLastWriteTimeUtc(file) > excludeNewerThan.Value)
+                continue;
+
             yield return file;
         }
 
         foreach (var dir in keptDirs)
         {
-            foreach (var f in Walk(root, dir, extensions, ignoreDirs, gitignore, canonicalRoot))
+            foreach (var f in Walk(root, dir, extensions, ignoreDirs, gitignore, canonicalRoot, excludeNewerThan))
                 yield return f;
         }
     }
