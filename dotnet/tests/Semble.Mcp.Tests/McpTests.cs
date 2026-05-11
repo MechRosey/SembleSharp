@@ -152,6 +152,72 @@ public class IndexCacheTests : IDisposable
         Assert.Equal(1, callCount);
     }
 
+    private static string[] MakePaths(string prefix, int count)
+    {
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"));
+        return Enumerable.Range(1, count)
+            .Select(i => System.IO.Path.Combine(root, "path" + i))
+            .ToArray();
+    }
+
+    [Fact]
+    public async Task Cache_Evicts_Oldest_Entry_When_Full()
+    {
+        var index = FakeIndex.Build(new[] { MakeChunk("x = 1", "src/foo.py") });
+        int callCount = 0;
+        var cache = new IndexCache(new MockEncoder())
+        {
+            FromPath = (_, _) => { callCount++; return index; },
+        };
+
+        var paths = MakePaths("semble-lru-", 11);
+
+        for (int i = 0; i < 10; i++)
+            await cache.GetAsync(paths[i]);
+        Assert.Equal(10, callCount);
+
+        await cache.GetAsync(paths[10]);
+        Assert.Equal(11, callCount);
+
+        // paths[0] must have been evicted -- accessing it triggers a rebuild
+        await cache.GetAsync(paths[0]);
+        Assert.Equal(12, callCount);
+    }
+
+    [Fact]
+    public async Task Cache_Respects_Lru_Order_On_Eviction()
+    {
+        var index = FakeIndex.Build(new[] { MakeChunk("x = 1", "src/foo.py") });
+        int callCount = 0;
+        var cache = new IndexCache(new MockEncoder())
+        {
+            FromPath = (_, _) => { callCount++; return index; },
+        };
+
+        var paths = MakePaths("semble-lru2-", 11);
+
+        for (int i = 0; i < 10; i++)
+            await cache.GetAsync(paths[i]);
+        Assert.Equal(10, callCount);
+
+        // Re-access paths[0] to promote to MRU; paths[1] becomes the LRU
+        await cache.GetAsync(paths[0]);
+        Assert.Equal(10, callCount);
+
+        // Add 11th -- should evict paths[1]
+        await cache.GetAsync(paths[10]);
+        Assert.Equal(11, callCount);
+
+        // paths[1] must be evicted -- accessing it rebuilds
+        await cache.GetAsync(paths[1]);
+        Assert.Equal(12, callCount);
+
+        // paths[0] must still be cached -- no rebuild
+        int before = callCount;
+        await cache.GetAsync(paths[0]);
+        Assert.Equal(before, callCount);
+    }
+
     [Fact]
     public async Task Failed_Build_Is_Evicted_So_Next_Caller_Can_Retry()
     {
