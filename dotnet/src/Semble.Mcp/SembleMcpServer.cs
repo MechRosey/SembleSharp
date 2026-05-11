@@ -25,13 +25,19 @@ public sealed class SembleMcpServer
         "No repo specified and no default index. " +
         "Pass a git URL (https://github.com/...) or local path as `repo`.";
 
-    private readonly IndexCache _cache;
+    private readonly IndexCache? _cache;
     private readonly string? _defaultSource;
+    private readonly string? _unavailableReason;
 
     public SembleMcpServer(IndexCache cache, string? defaultSource = null)
     {
         _cache = cache;
         _defaultSource = defaultSource;
+    }
+
+    public SembleMcpServer(string unavailableReason)
+    {
+        _unavailableReason = unavailableReason;
     }
 
     public async Task<string> SearchAsync(
@@ -40,6 +46,9 @@ public sealed class SembleMcpServer
         string mode = "hybrid",
         int topK = 5)
     {
+        if (_unavailableReason is not null)
+            return _unavailableReason;
+
         var source = repo ?? _defaultSource;
         if (string.IsNullOrEmpty(source))
             return NoRepoMessage;
@@ -47,7 +56,7 @@ public sealed class SembleMcpServer
         SembleIndex index;
         try
         {
-            index = await _cache.GetAsync(source);
+            index = await _cache!.GetAsync(source);
         }
         catch (Exception ex)
         {
@@ -66,6 +75,9 @@ public sealed class SembleMcpServer
         string? repo = null,
         int topK = 5)
     {
+        if (_unavailableReason is not null)
+            return _unavailableReason;
+
         var source = repo ?? _defaultSource;
         if (string.IsNullOrEmpty(source))
             return NoRepoMessage;
@@ -73,7 +85,7 @@ public sealed class SembleMcpServer
         SembleIndex index;
         try
         {
-            index = await _cache.GetAsync(source);
+            index = await _cache!.GetAsync(source);
         }
         catch (Exception ex)
         {
