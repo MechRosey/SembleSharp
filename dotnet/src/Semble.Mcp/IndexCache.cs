@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-
 namespace Semble.Mcp;
 
 /// <summary>
@@ -8,11 +6,17 @@ namespace Semble.Mcp;
 ///  - first call per (source, ref) pair builds the index off the calling thread
 ///  - subsequent calls share the same Task (and thus the same SembleIndex)
 ///  - failed builds are evicted so the next caller can retry
+///  - at most 10 entries are kept; the least recently used entry is evicted first
 /// </summary>
 public sealed class IndexCache
 {
+    private const int MaxCacheSize = 10;
+
     private readonly IEncoder _model;
-    private readonly ConcurrentDictionary<string, Task<SembleIndex>> _tasks = new();
+    private readonly object _lock = new();
+    private readonly Dictionary<string, Task<SembleIndex>> _tasks = new();
+    private readonly LinkedList<string> _lru = new();
+    private readonly Dictionary<string, LinkedListNode<string>> _lruNodes = new();
 
     /// <summary>Test seam: defaults to <see cref="SembleIndex.FromPath"/>.</summary>
     public Func<string, IEncoder, SembleIndex> FromPath { get; init; } =
@@ -34,24 +38,60 @@ public sealed class IndexCache
             ? (@ref is not null ? $"{source}@{@ref}" : source)
             : System.IO.Path.GetFullPath(source);
 
-        var task = _tasks.GetOrAdd(cacheKey, _ =>
+        lock (_lock)
         {
+            if (_tasks.TryGetValue(cacheKey, out var existing))
+            {
+                _lru.Remove(_lruNodes[cacheKey]);
+                _lruNodes[cacheKey] = _lru.AddFirst(cacheKey);
+                return existing;
+            }
+
+            if (_tasks.Count >= MaxCacheSize)
+            {
+                var lruKey = _lru.Last!.Value;
+                _lru.RemoveLast();
+                _lruNodes.Remove(lruKey);
+                _tasks.Remove(lruKey);
+            }
+
             Task<SembleIndex> built = isGit
                 ? Task.Run(() => FromGit(source, @ref, _model))
                 : Task.Run(() => FromPath(cacheKey, _model));
 
-            // Evict on failure so the next caller can retry.
             built.ContinueWith(
                 t =>
                 {
                     if (t.IsFaulted || t.IsCanceled)
-                        _tasks.TryRemove(new KeyValuePair<string, Task<SembleIndex>>(cacheKey, t));
+                    {
+                        lock (_lock)
+                        {
+                            if (_tasks.TryGetValue(cacheKey, out var stored) && ReferenceEquals(stored, t))
+                            {
+                                _tasks.Remove(cacheKey);
+                                if (_lruNodes.Remove(cacheKey, out var node))
+                                    _lru.Remove(node);
+                            }
+                        }
+                    }
                 },
                 TaskContinuationOptions.ExecuteSynchronously);
 
+            _tasks[cacheKey] = built;
+            _lruNodes[cacheKey] = _lru.AddFirst(cacheKey);
             return built;
-        });
+        }
+    }
 
-        return task;
+    /// <summary>Remove a cached entry so the next <see cref="GetAsync"/> call rebuilds it.</summary>
+    public void Invalidate(string source)
+    {
+        bool isGit = Formatting.IsGitUrl(source);
+        string cacheKey = isGit ? source : System.IO.Path.GetFullPath(source);
+        lock (_lock)
+        {
+            if (_tasks.Remove(cacheKey) && _lruNodes.Remove(cacheKey, out var node))
+                _lru.Remove(node);
+        }
     }
 }
