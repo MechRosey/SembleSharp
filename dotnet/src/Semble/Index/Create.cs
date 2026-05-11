@@ -26,6 +26,9 @@ public static class Create
         var chunks = new List<Chunk>();
         foreach (var filePath in FileWalker.WalkFiles(path, resolvedExtensions, ignore))
         {
+            if (new FileInfo(filePath).Length > 1_000_000)
+                continue;
+
             var language = FileWalker.LanguageForPath(filePath);
             string source;
             try

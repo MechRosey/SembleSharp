@@ -28,6 +28,9 @@ public static class Chunker
     /// </remarks>
     public static List<Chunk> ChunkFile(string filePath)
     {
+        if (new FileInfo(filePath).Length > 1_000_000)
+            return new List<Chunk>();
+
         var extractor = TextExtractors.Current.For(filePath);
         try
         {
