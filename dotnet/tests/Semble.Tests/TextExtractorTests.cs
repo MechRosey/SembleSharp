@@ -76,6 +76,7 @@ public class TextExtractorRegistryTests
     }
 }
 
+[Collection("TextExtractors")]
 public class ChunkerExtractorIntegrationTests : IDisposable
 {
     private readonly TextExtractors _saved;

@@ -124,6 +124,7 @@ public class PdfChunkerTests
     }
 }
 
+[Collection("TextExtractors")]
 public class PdfExtractorPipelineTests : IDisposable
 {
     private readonly TextExtractors _saved;

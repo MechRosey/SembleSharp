@@ -45,10 +45,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
 
       - name: Restore
-        run: dotnet restore dotnet/Semble.sln
+        run: dotnet restore dotnet/Semble.sln -p:Platform="Any CPU"
 
       - name: Build
-        run: dotnet build dotnet/Semble.sln --configuration Release --no-restore
+        run: dotnet build dotnet/Semble.sln --configuration Release --no-restore -p:Platform="Any CPU"
 
       - name: Test
-        run: dotnet test dotnet/Semble.sln --configuration Release --no-build --verbosity normal
+        run: dotnet test dotnet/Semble.sln --configuration Release --no-build --verbosity normal -p:Platform="Any CPU"

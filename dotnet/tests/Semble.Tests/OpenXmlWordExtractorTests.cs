@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Semble.Tests;
 
+[Collection("TextExtractors")]
 public class OpenXmlWordExtractorTests : IDisposable
 {
     private readonly string _tmp;
