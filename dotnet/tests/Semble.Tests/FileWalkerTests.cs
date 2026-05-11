@@ -149,6 +149,24 @@ public class WalkFilesTests : IDisposable
     }
 
     [Fact]
+    public void WalkFiles_Excludes_Files_Modified_After_Threshold()
+    {
+        Touch("old.py");
+        var threshold = DateTime.UtcNow;
+        // small pause so the new file has a newer mtime
+        System.Threading.Thread.Sleep(20);
+        Touch("new.py");
+
+        var exts = new HashSet<string>(StringComparer.Ordinal) { ".py" };
+        var found = FileWalker.WalkFiles(_tmp, exts, excludeNewerThan: threshold)
+            .Select(p => Path.GetRelativePath(_tmp, p).Replace(Path.DirectorySeparatorChar, '/'))
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("old.py", found);
+        Assert.DoesNotContain("new.py", found);
+    }
+
+    [Fact]
     public void Deeper_Tree_Symlink_Pointing_Outside_Is_Caught_On_Recursion()
     {
         // A real subdirectory containing a symlink that points out of root

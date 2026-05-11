@@ -105,7 +105,8 @@ public static class FileWalker
     public static IEnumerable<string> WalkFiles(
         string root,
         IReadOnlySet<string> extensions,
-        IReadOnlySet<string>? ignore = null)
+        IReadOnlySet<string>? ignore = null,
+        DateTime? excludeNewerThan = null)
     {
         var ignoreDirs = new HashSet<string>(DefaultIgnoredDirs, StringComparer.Ordinal);
         if (ignore is not null)
