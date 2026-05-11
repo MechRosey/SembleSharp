@@ -65,8 +65,12 @@ public static class GitRunner
         }
 
         p.StandardInput.Close();
-        var stderr = p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        return new CloneResult(p.ExitCode, stderr);
+        var stderrTask = Task.Run(() => p.StandardError.ReadToEnd());
+        if (!p.WaitForExit(CloneTimeoutMs))
+        {
+            try { p.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            return new CloneResult(-1, $"git clone timed out after {CloneTimeoutMs / 1000} s");
+        }
+        return new CloneResult(p.ExitCode, stderrTask.GetAwaiter().GetResult());
     }
 }
