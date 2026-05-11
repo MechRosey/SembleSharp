@@ -1,0 +1,120 @@
+<Project>
+
+  <!--
+    Build the vendored tree-sitter natives for the host platform before the
+    managed library is built, and stage them under runtimes/<rid>/native/ so
+    the .NET asset graph picks them up at runtime. Native source lives at
+    `dotnet/native/{tree-sitter,tree-sitter-cpp}` and is pinned by VENDOR.md
+    in each subdirectory.
+
+    Skip the build if the native libs are already present and newer than the
+    vendored sources — keeps incremental builds fast.
+  -->
+
+  <PropertyGroup>
+    <SembleNativeRoot>$(MSBuildThisFileDirectory)</SembleNativeRoot>
+
+    <!--
+      Compute a portable RID (linux-x64 / osx-arm64 / win-x64 / …) for the
+      host. We intentionally don't use $(NETCoreSdkRuntimeIdentifier) which
+      can be too specific (e.g. "ubuntu.24.04-x64") for the runtime's
+      portable-RID fallback graph to resolve at load time.
+    -->
+    <_SembleNativeOs Condition="$([MSBuild]::IsOSPlatform('Linux'))">linux</_SembleNativeOs>
+    <_SembleNativeOs Condition="$([MSBuild]::IsOSPlatform('OSX'))">osx</_SembleNativeOs>
+    <_SembleNativeOs Condition="$([MSBuild]::IsOSPlatform('Windows'))">win</_SembleNativeOs>
+
+    <_SembleNativeArch Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' == 'X64'">x64</_SembleNativeArch>
+    <_SembleNativeArch Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' == 'Arm64'">arm64</_SembleNativeArch>
+    <_SembleNativeArch Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' == 'X86'">x86</_SembleNativeArch>
+
+    <SembleNativeRid Condition="'$(SembleNativeRid)' == ''">$(_SembleNativeOs)-$(_SembleNativeArch)</SembleNativeRid>
+    <SembleNativeOutputDir>$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\runtimes\$(SembleNativeRid)\native\</SembleNativeOutputDir>
+    <SembleNativeBuildDir>$(MSBuildProjectDirectory)\obj\native\$(SembleNativeRid)\</SembleNativeBuildDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SembleNativeSource Include="$(SembleNativeRoot)tree-sitter\lib\src\**\*.c" />
+    <SembleNativeSource Include="$(SembleNativeRoot)tree-sitter\lib\src\**\*.h" />
+    <SembleNativeSource Include="$(SembleNativeRoot)tree-sitter\lib\include\**\*.h" />
+    <SembleNativeSource Include="$(SembleNativeRoot)tree-sitter-cpp\src\**\*.c" />
+    <SembleNativeSource Include="$(SembleNativeRoot)tree-sitter-cpp\src\**\*.h" />
+    <SembleNativeSource Include="$(SembleNativeRoot)build-natives.sh" />
+    <SembleNativeSource Include="$(SembleNativeRoot)build-natives.cmd" />
+  </ItemGroup>
+
+  <Target Name="BuildSembleNatives"
+          BeforeTargets="BeforeBuild"
+          Inputs="@(SembleNativeSource)"
+          Outputs="$(SembleNativeBuildDir)libtree-sitter.so;$(SembleNativeBuildDir)libtree-sitter.dylib;$(SembleNativeBuildDir)tree-sitter.dll">
+    <MakeDir Directories="$(SembleNativeBuildDir);$(SembleNativeOutputDir)" />
+
+    <!-- Unix (Linux, macOS): invoke the shell script. -->
+    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))"
+          Command="sh &quot;$(SembleNativeRoot)build-natives.sh&quot; &quot;$(SembleNativeBuildDir)&quot;"
+          WorkingDirectory="$(SembleNativeRoot)" />
+
+    <!-- Windows: invoke the cmd script. -->
+    <Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+          Command="&quot;$(SembleNativeRoot)build-natives.cmd&quot; &quot;$(SembleNativeBuildDir)&quot;"
+          WorkingDirectory="$(SembleNativeRoot)" />
+  </Target>
+
+  <!--
+    Treat the built natives as content that should be copied to bin/ and
+    propagated to any project that references this one. We compute the path
+    based on the host RID set above — the script writes there unconditionally.
+  -->
+  <!--
+    Stage the built natives next to the managed assembly. We deliberately copy
+    them to the bin root (rather than runtimes/<rid>/native/) because the .NET
+    asset graph that wires up runtimes/ is normally fed by NuGet `.deps.json`
+    metadata, which we don't emit for source-built artefacts. The bin-root
+    location is on NATIVE_DLL_SEARCH_DIRECTORIES so [DllImport] resolves
+    correctly, and it's automatically inherited by any project that has a
+    ProjectReference on Semble.
+  -->
+  <Target Name="StageSembleNatives"
+          AfterTargets="BuildSembleNatives"
+          BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <None Include="$(SembleNativeBuildDir)libtree-sitter.so"
+            Condition="Exists('$(SembleNativeBuildDir)libtree-sitter.so')">
+        <Link>libtree-sitter.so</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <Pack>false</Pack>
+      </None>
+      <None Include="$(SembleNativeBuildDir)libtree-sitter-cpp.so"
+            Condition="Exists('$(SembleNativeBuildDir)libtree-sitter-cpp.so')">
+        <Link>libtree-sitter-cpp.so</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <Pack>false</Pack>
+      </None>
+      <None Include="$(SembleNativeBuildDir)libtree-sitter.dylib"
+            Condition="Exists('$(SembleNativeBuildDir)libtree-sitter.dylib')">
+        <Link>libtree-sitter.dylib</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <Pack>false</Pack>
+      </None>
+      <None Include="$(SembleNativeBuildDir)libtree-sitter-cpp.dylib"
+            Condition="Exists('$(SembleNativeBuildDir)libtree-sitter-cpp.dylib')">
+        <Link>libtree-sitter-cpp.dylib</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <Pack>false</Pack>
+      </None>
+      <None Include="$(SembleNativeBuildDir)tree-sitter.dll"
+            Condition="Exists('$(SembleNativeBuildDir)tree-sitter.dll')">
+        <Link>tree-sitter.dll</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <Pack>false</Pack>
+      </None>
+      <None Include="$(SembleNativeBuildDir)tree-sitter-cpp.dll"
+            Condition="Exists('$(SembleNativeBuildDir)tree-sitter-cpp.dll')">
+        <Link>tree-sitter-cpp.dll</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <Pack>false</Pack>
+      </None>
+    </ItemGroup>
+  </Target>
+
+</Project>

@@ -7,54 +7,46 @@
 
 <div align="center">
   <h2>
-    <a href="https://pypi.org/project/semble/"><img src="https://img.shields.io/pypi/v/semble?color=%23007ec6&label=pypi%20package" alt="Package version"></a>
-    <a href="https://app.codecov.io/gh/MinishLab/semble">
-      <img src="https://codecov.io/gh/MinishLab/semble/graph/badge.svg?token=SZKRFKPPCG" alt="Codecov">
-    </a>
     <a href="https://github.com/MinishLab/semble/blob/main/LICENSE">
       <img src="https://img.shields.io/badge/license-MIT-green" alt="License - MIT">
     </a>
   </h2>
 
-[Quickstart](#quickstart) •
-[Main Features](#main-features) •
-[MCP Server](#mcp-server) •
-[CLI](#cli) •
-[How it works](#how-it-works) •
+[Quickstart](#quickstart) -
+[Main Features](#main-features) -
+[MCP Server](#mcp-server) -
+[CLI](#cli) -
+[How it works](#how-it-works) -
 [Benchmarks](#benchmarks)
 
 </div>
+
+> **This is the .NET port of [MinishLab/semble](https://github.com/MinishLab/semble).** All source in `dotnet/` is pure C# targeting net8.0. The Python package benchmarks still apply -- the algorithms are identical.
 
 Semble is a code search library built for agents. It returns the exact code snippets they need instantly, using ~98% fewer tokens than grep+read and cutting latency on every step. Indexing and searching a full codebase end-to-end takes under a second, with ~200x faster indexing and ~10x faster queries than a code-specialized transformer, at 99% of its retrieval quality (see [benchmarks](#benchmarks)). Everything runs on CPU with no API keys, GPU, or external services. Run it as an [MCP server](#mcp-server) and any agent (Claude Code, Cursor, Codex, OpenCode, etc.) gets instant access to any repo, cloned and indexed on demand.
 
 ## Quickstart
 
+### Prerequisites
+
+1. [.NET 8 SDK](https://dotnet.microsoft.com/download)
+2. The default embedding model (downloaded once):
+
 ```bash
-pip install semble  # Install with pip
-uv add semble       # Install with uv
+dotnet run --project dotnet/src/Semble.Cli -- download-model
 ```
 
-```python
-from semble import SembleIndex
+### Search a local repo
 
-# Index a local directory
-index = SembleIndex.from_path("./my-project")
+```bash
+dotnet run --project dotnet/src/Semble.Cli -- search "authentication flow" ./my-project
+dotnet run --project dotnet/src/Semble.Cli -- search "save_pretrained" ./my-project
+```
 
-# Index a remote git repository
-index = SembleIndex.from_git("https://github.com/MinishLab/model2vec")
+### Publish as a standalone binary
 
-# Search the index with a natural-language or code query
-results = index.search("save model to disk", top_k=3)
-
-# Find code similar to a specific result
-related = index.find_related(results[0], top_k=3)
-
-# Each result exposes the matched chunk
-result = results[0]
-result.chunk.file_path   # "model2vec/model.py"
-result.chunk.start_line  # 127
-result.chunk.end_line    # 150
-result.chunk.content     # "def save_pretrained(self, path: PathLike, ..."
+```bash
+dotnet publish dotnet/src/Semble.Cli -c Release -r linux-x64 --self-contained
 ```
 
 ## Main Features
@@ -68,46 +60,30 @@ result.chunk.content     # "def save_pretrained(self, path: PathLike, ..."
 
 ## MCP Server
 
-Semble can run as an MCP server so agents can search any codebase directly. Repos are cloned and indexed on demand, and indexes are cached for the lifetime of the session.
+Semble runs as an MCP server so agents can search any codebase. Repos are cloned and indexed on demand; indexes are cached for the lifetime of the session.
 
 ### Setup
 
-> Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) to be installed.
-
 #### Claude Code
+
 ```bash
-claude mcp add semble -s user -- uvx --from "semble[mcp]" semble
+claude mcp add semble -- dotnet run --project /path/to/dotnet/src/Semble.Mcp
 ```
 
-#### Codex
-Add to `~/.codex/config.toml`:
-```toml
-[mcp_servers.semble]
-command = "uvx"
-args = ["--from", "semble[mcp]", "semble"]
+Or with a published binary:
+
+```bash
+claude mcp add semble -- /path/to/semble-mcp
 ```
 
-#### OpenCode
-Add to `~/.opencode/config.json`:
-```json
-{
-  "mcp": {
-    "semble": {
-      "type": "local",
-      "command": ["uvx", "--from", "semble[mcp]", "semble"]
-    }
-  }
-}
-```
+#### Any MCP client (JSON config)
 
-#### Cursor
-Add to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in your project):
 ```json
 {
   "mcpServers": {
     "semble": {
-      "command": "uvx",
-      "args": ["--from", "semble[mcp]", "semble"]
+      "command": "dotnet",
+      "args": ["run", "--project", "/path/to/dotnet/src/Semble.Mcp"]
     }
   }
 }
@@ -122,52 +98,15 @@ Add to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in your project):
 
 ### Sub-agent support
 
-Claude Code and Codex CLI lazy-load MCP tool schemas, so sub-agents cannot call `mcp__semble__search` directly. The fix is to invoke semble through the [CLI](#cli) via Bash instead.
-
-**Claude Code**: run this once in your project root:
+Claude Code sub-agents cannot call MCP tools directly. Use the CLI via Bash instead:
 
 ```bash
-semble init
-# or, if semble is not on $PATH:
-uvx --from "semble[mcp]" semble init
-```
-
-This writes [`.claude/agents/semble-search.md`](src/semble/agents/semble-search.md).
-
-**Other tools (Codex, etc.)**: append the following to your `AGENTS.md`:
-
-```markdown
-## Code Search
-
-Use `semble search` to find code by describing what it does or naming a symbol/identifier, instead of grep:
-
-​```bash
 semble search "authentication flow" ./my-project
-semble search "save_pretrained" ./my-project
-semble search "save model to disk" ./my-project --top-k 10
-​```
-
-Use `semble find-related` to discover code similar to a known location (pass `file_path` and `line` from a prior search result):
-
-​```bash
-semble find-related src/auth.py 42 ./my-project
-​```
-
-`path` defaults to the current directory when omitted; git URLs are accepted.
-
-If `semble` is not on `$PATH`, use `uvx --from "semble[mcp]" semble` in its place.
-
-## Workflow
-
-1. Start with `semble search` to find relevant chunks.
-2. Inspect full files only when the returned chunk is not enough context.
-3. Optionally use `semble find-related` with a promising result's `file_path` and `line` to discover related implementations.
-4. Use grep only when you need exhaustive literal matches or quick confirmation of an exact string.
 ```
+
+Or run `semble init` once in the project root to install a `.claude/agents/semble-search.md` agent definition.
 
 ## CLI
-
-Semble also ships as a standalone CLI for use outside of MCP. This is useful in scripts, sub-agents, or anywhere you want search results without an MCP session.
 
 ```bash
 # Search a local repo
@@ -179,17 +118,16 @@ semble search "save_pretrained" ./my-project
 # Search a remote repo (cloned on demand)
 semble search "save model to disk" https://github.com/MinishLab/model2vec
 
-# Find code similar to a known location (file_path and line from a prior search result)
-semble find-related src/auth.py 42 ./my-project
+# Find code similar to a known location
+semble find-related src/auth.cs 42 ./my-project
+
+# Initialise sub-agent helper (writes .claude/agents/semble-search.md)
+semble init
 ```
-
-`path` defaults to the current directory when omitted; git URLs are accepted.
-
-If `semble` is not on `$PATH`, use `uvx --from "semble[mcp]" semble` in its place.
 
 ## How it works
 
-Semble splits each file into code-aware chunks using [Chonkie](https://github.com/chonkie-inc/chonkie), then scores every query against the chunks with two complementary retrievers: static [Model2Vec](https://github.com/MinishLab/model2vec) embeddings using the code-specialized [potion-code-16M](https://huggingface.co/minishlab/potion-code-16M) model for semantic similarity, and [BM25](https://github.com/xhluca/bm25s) for lexical matches on identifiers and API names. The two score lists are fused with Reciprocal Rank Fusion (RRF).
+Semble splits each file into code-aware chunks (Roslyn for C#, tree-sitter for C++, heading-aware for Markdown, page-aware for PDF/DOCX), then scores every query with two complementary retrievers: static [Model2Vec](https://github.com/MinishLab/model2vec) embeddings using the code-specialized [potion-code-16M](https://huggingface.co/minishlab/potion-code-16M) model for semantic similarity, and BM25 for lexical matches on identifiers and API names. The two score lists are fused with Reciprocal Rank Fusion (RRF).
 
 After fusing, results are reranked with a set of code-aware signals:
 
@@ -208,6 +146,8 @@ Because the embedding model is static with no transformer forward pass at query 
 
 ## Benchmarks
 
+Benchmarks were produced with the Python reference implementation. The .NET port uses identical algorithms (BM25 lucene method, same RRF k=60, same ranking constants).
+
 We benchmark quality and speed across all methods on ~1,250 queries over 63 repositories in 19 languages. The x-axis is total latency (index + first query); the y-axis is NDCG@10. Marker size reflects model parameter count.
 
 ![Speed vs quality](https://raw.githubusercontent.com/MinishLab/semble/main/assets/images/speed_vs_ndcg_cold.png)
@@ -220,8 +160,8 @@ We benchmark quality and speed across all methods on ~1,250 queries over 63 repo
 | ColGREP | 0.693 | 5.8 s | 124 ms |
 | BM25 | 0.673 | 263 ms | 0.02 ms |
 | grepai | 0.561 | 35 s | 48 ms |
-| probe | 0.387 | — | 207 ms |
-| ripgrep | 0.126 | — | 12 ms |
+| probe | 0.387 | -- | 207 ms |
+| ripgrep | 0.126 | -- | 12 ms |
 
 Semble achieves 99% of the performance of the 137M-parameter [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed) Hybrid, while indexing 218x faster and answering queries 11x faster. See [benchmarks](benchmarks/README.md) for per-language results, ablations, and methodology.
 

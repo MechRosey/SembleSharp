@@ -14,8 +14,10 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Python distutils put build artefacts in /lib/ at the repo root; scope this
+# rule so it doesn't swallow vendored native source under dotnet/native/*/lib/.
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -205,3 +207,18 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Claude Code local config
+.mcp.json
+
+# .NET
+dotnet/**/bin/
+dotnet/**/obj/
+dotnet/native/*.obj
+*.user
+*.suo
+.vs/
+TestResults/
+
+
+ContextLog.md

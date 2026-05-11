@@ -1,0 +1,59 @@
+name: dotnet build and test
+
+on:
+  push:
+    branches:
+      - main
+      - claude/dotnet-migration-fwvd9
+  pull_request:
+    branches:
+      - main
+      - claude/dotnet-migration-fwvd9
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    name: Run dotnet test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      # Make `cl.exe` available on Windows so dotnet/native/build-natives.cmd
+      # can compile the vendored tree-sitter sources. ubuntu-latest and
+      # macos-latest already have cc/clang on PATH.
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # Install pdftotext (Poppler) on Linux for the real-binary extractor
+      # test. On macOS/Windows the test returns early when pdftotext is
+      # absent rather than skipping (avoids vstest exit-code issues).
+      - name: Install pdftotext (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
+      - name: Restore
+        run: dotnet restore dotnet/Semble.sln -p:Platform="Any CPU"
+
+      - name: Build
+        run: dotnet build dotnet/Semble.sln --configuration Release --no-restore -p:Platform="Any CPU"
+
+      - name: Test
+        env:
+          Platform: ""
+        run: |
+          dotnet test dotnet/tests/Semble.Tests/Semble.Tests.csproj --configuration Release --no-build --verbosity normal
+          dotnet test dotnet/tests/Semble.Cli.Tests/Semble.Cli.Tests.csproj --configuration Release --no-build --verbosity normal
+          dotnet test dotnet/tests/Semble.Mcp.Tests/Semble.Mcp.Tests.csproj --configuration Release --no-build --verbosity normal
