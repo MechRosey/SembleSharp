@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Semble.Mcp;
 
 /// <summary>
@@ -24,6 +26,18 @@ public sealed class SembleMcpServer
     private const string NoRepoMessage =
         "No repo specified and no default index. " +
         "Pass a git URL (https://github.com/...) or local path as `repo`.";
+
+    private static readonly string[] UnsafeMcpSchemes = { "ssh://", "file://", "git+ssh://" };
+
+    private static readonly Regex ScpFormRe = new(
+        @"^[\w.-]+@[\w.-]+:(?!/)", RegexOptions.Compiled);
+
+    private static bool IsUnsafeMcpSource(string source)
+    {
+        foreach (var scheme in UnsafeMcpSchemes)
+            if (source.StartsWith(scheme, StringComparison.Ordinal)) return true;
+        return ScpFormRe.IsMatch(source);
+    }
 
     private readonly IndexCache? _cache;
     private readonly string? _defaultSource;
@@ -52,6 +66,8 @@ public sealed class SembleMcpServer
         var source = repo ?? _defaultSource;
         if (string.IsNullOrEmpty(source))
             return NoRepoMessage;
+        if (IsUnsafeMcpSource(source))
+            return "Unsafe git transport is not supported via MCP. Use an https:// URL.";
 
         SembleIndex index;
         try
@@ -81,6 +97,8 @@ public sealed class SembleMcpServer
         var source = repo ?? _defaultSource;
         if (string.IsNullOrEmpty(source))
             return NoRepoMessage;
+        if (IsUnsafeMcpSource(source))
+            return "Unsafe git transport is not supported via MCP. Use an https:// URL.";
 
         SembleIndex index;
         try
