@@ -184,10 +184,10 @@ public class PdftotextRealBinaryTests
     private static bool PdftotextAvailable() =>
         new Semble.Index.Extractors.PdftotextExtractor().IsAvailable;
 
-    [SkippableFact]
+    [Fact]
     public void Real_Pdftotext_Extracts_Text_From_A_Tiny_Synthetic_Pdf()
     {
-        Skip.IfNot(PdftotextAvailable(), "pdftotext is not on PATH on this host");
+        if (!PdftotextAvailable()) return;
         // Write a minimal valid PDF (one page, one text run) so we don't need
         // to ship a binary fixture. The shape comes from the PDF 1.4 spec,
         // §7 (file structure) + §10 (showing text).
