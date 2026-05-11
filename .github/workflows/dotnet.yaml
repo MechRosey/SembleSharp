@@ -53,4 +53,7 @@ jobs:
       - name: Test
         env:
           Platform: ""
-        run: dotnet test dotnet/Semble.sln --configuration Release --no-build --verbosity normal -p:Platform="Any CPU"
+        run: |
+          dotnet test dotnet/tests/Semble.Tests/Semble.Tests.csproj --configuration Release --no-build --verbosity normal
+          dotnet test dotnet/tests/Semble.Cli.Tests/Semble.Cli.Tests.csproj --configuration Release --no-build --verbosity normal
+          dotnet test dotnet/tests/Semble.Mcp.Tests/Semble.Mcp.Tests.csproj --configuration Release --no-build --verbosity normal
