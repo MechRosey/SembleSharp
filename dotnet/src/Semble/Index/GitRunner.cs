@@ -24,6 +24,9 @@ public static class GitRunner
     /// <summary>Test seam: replace to mock the git invocation.</summary>
     public static Runner CurrentRunner { get; set; } = DefaultRunner;
 
+    /// <summary>Milliseconds before a clone is killed. Enforced by DefaultRunner.</summary>
+    public static int CloneTimeoutMs { get; set; } = 60_000;
+
     public static CloneResult DefaultRunner(string url, string? @ref, string targetDir)
     {
         var psi = new ProcessStartInfo

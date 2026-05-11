@@ -297,4 +297,23 @@ public class FromGitTests : IDisposable
             SembleIndex.FromGit("https://github.com/x/y", model: new MockEncoder()));
         Assert.Contains("git is not installed", ex.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void DefaultRunner_Returns_Failed_Result_When_Clone_Exceeds_Timeout()
+    {
+        int originalTimeout = GitRunner.CloneTimeoutMs;
+        try
+        {
+            GitRunner.CloneTimeoutMs = 0;
+            var target = System.IO.Path.Combine(_tmp, "clone-timeout-test");
+            Directory.CreateDirectory(target);
+            var result = GitRunner.DefaultRunner("https://github.com/MinishLab/semble", null, target);
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("timed out", result.Stderr, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            GitRunner.CloneTimeoutMs = originalTimeout;
+        }
+    }
 }
