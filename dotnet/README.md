@@ -15,9 +15,9 @@ dotnet/
 |   +-- Semble.Cli/                # search / find-related / init subcommands
 |   +-- Semble.Mcp/                # MCP stdio server (ModelContextProtocol 1.2.0)
 +-- tests/
-    +-- Semble.Tests/              # 230 cases
-    +-- Semble.Cli.Tests/          # 17 cases
-    +-- Semble.Mcp.Tests/          # 28 cases
+    +-- Semble.Tests/              # 240 cases
+    +-- Semble.Cli.Tests/          # 18 cases
+    +-- Semble.Mcp.Tests/          # 40 cases
 ```
 
 ## Build / test
@@ -55,7 +55,7 @@ the migration branch, on Ubuntu / macOS / Windows.
 | 7  | Dense backend                                       | done -- brute-force cosine + stable top-k |
 | 8  | Index orchestration (`FromPath` / `FromGit`)        | done |
 | 9  | Search (`semantic` / `bm25` / `hybrid`)             | done -- RRF k=60, full ranking pipeline |
-| 11 | CLI (`search`, `find-related`, `init`, `download-model`) | done -- embedded agent-search.md resource; built-in HTTPS downloader |
+| 11 | CLI (`search`, `find-related`, `init`, `download-model`, `savings`) | done -- embedded agent-search.md resource; built-in HTTPS downloader |
 | 12 | MCP server                                          | done -- `ModelContextProtocol` SDK + stdio transport |
 | 10 | Default static-embedding encoder (`PotionCodeEncoder`) | done -- pure-C# loader for model2vec / sentence-transformers folder layout; WordPiece tokenizer hand-rolled; F32 and F64 weight tensors supported |
 | 13 | Remove Python sources, update root README           | done -- parity verified; Python source, tests, and tooling removed |
@@ -87,6 +87,7 @@ Then:
 # CLI
 dotnet run --project dotnet/src/Semble.Cli -- init
 dotnet run --project dotnet/src/Semble.Cli -- search "auth flow" path/to/repo
+dotnet run --project dotnet/src/Semble.Cli -- savings path/to/repo   # indexed files, chunks, tokens
 
 # MCP server (stdio)
 dotnet run --project dotnet/src/Semble.Mcp -- path/to/repo
