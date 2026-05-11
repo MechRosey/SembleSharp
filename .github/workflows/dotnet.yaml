@@ -51,4 +51,6 @@ jobs:
         run: dotnet build dotnet/Semble.sln --configuration Release --no-restore -p:Platform="Any CPU"
 
       - name: Test
+        env:
+          Platform: ""
         run: dotnet test dotnet/Semble.sln --configuration Release --no-build --verbosity normal -p:Platform="Any CPU"
