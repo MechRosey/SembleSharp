@@ -71,6 +71,7 @@ public class WalkFilesTests : IDisposable
         Touch(".venv/lib/b.py");
         Touch("node_modules/pkg/c.py");
         Touch(".cache/uv/d.py");
+        Touch(".next/server/chunks/page.py");
         Assert.Equal(new HashSet<string> { "src/a.py" }, WalkSet());
     }
 
